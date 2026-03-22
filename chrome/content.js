@@ -1,10 +1,8 @@
 (function () {
   'use strict';
 
-  // Clear the React Query IDB cache (content scripts share origin with the page).
-  // The page preloads this cache from an inline script in the HTML. We clear it here
-  // (document_start) so the preload finds nothing and falls back to a network fetch,
-  // which background.js modifies via filterResponseData.
+  // Clear the React Query IDB cache so the app fetches fresh bootstrap data
+  // (which inject.js's fetch override will modify to spoof Pro plan).
   try {
     const req = indexedDB.open('keyval-store', 1);
     req.onsuccess = () => {
@@ -19,7 +17,7 @@
 
   // Inject the fetch interceptor into the page context
   const script = document.createElement('script');
-  script.src = browser.runtime.getURL('inject.js');
+  script.src = chrome.runtime.getURL('inject.js');
   script.onload = () => script.remove();
   (document.head || document.documentElement).appendChild(script);
 
@@ -31,9 +29,6 @@
   `;
   (document.head || document.documentElement).appendChild(style);
 
-  // No DOM text manipulation — the bootstrap API interception in background.js
-  // handles plan spoofing at the network level.
-
   // Active ports keyed by request ID
   const activePorts = new Map();
 
@@ -43,7 +38,7 @@
 
     // Relay settings from background to inject.js
     if (event.data.type === 'CLAUDE_INTERCEPT_GET_SETTINGS') {
-      browser.storage.local.get('settings').then(({ settings }) => {
+      chrome.storage.local.get('settings', ({ settings }) => {
         window.postMessage({
           type: 'CLAUDE_INTERCEPT_SETTINGS',
           syncUrl: settings?.syncUrl || '',
@@ -51,7 +46,7 @@
           endpoint: settings?.endpoint || '',
           apiKey: settings?.apiKey || '',
         }, '*');
-      }).catch(() => {});
+      });
       return;
     }
 
@@ -60,7 +55,7 @@
     const { id, body, url } = event.data;
     console.log('[content.js] Relaying request to background, id=' + id);
 
-    const port = browser.runtime.connect({ name: 'intercept' });
+    const port = chrome.runtime.connect({ name: 'intercept' });
     activePorts.set(id, port);
 
     port.postMessage({ type: 'REQUEST', id, body, url });
@@ -88,5 +83,5 @@
     });
   });
 
-  console.log('[content.js] Claude Intercepter: content script loaded');
+  console.log('[content.js] Claude Interceptor: content script loaded');
 })();

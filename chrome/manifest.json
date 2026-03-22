@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Claude Interceptor",
+  "version": "0.1.0",
+  "description": "Route claude.ai inference through your own LiteLLM proxy",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "*://claude.ai/*",
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://claude.ai/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": ["*://claude.ai/*"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "48": "icons/icon48.png"
+    }
+  },
+  "icons": {
+    "48": "icons/icon48.png"
+  }
+}

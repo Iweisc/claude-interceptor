@@ -1,3 +1,5 @@
 .playwright-mcp/
 test-results/
 *.log
+sync-server/node_modules/
+sync-server/.env

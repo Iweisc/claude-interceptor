@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #b8b8ff;
+    }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      color: #999;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 8px 10px;
+      margin-bottom: 12px;
+      background: #16213e;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus { border-color: #6c63ff; }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding: 8px 0;
+    }
+    .toggle-row label {
+      margin-bottom: 0;
+      font-size: 13px;
+      color: #e0e0e0;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .toggle {
+      position: relative;
+      width: 42px;
+      height: 22px;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #333;
+      border-radius: 22px;
+      transition: 0.2s;
+    }
+    .toggle .slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    .toggle input:checked + .slider { background: #6c63ff; }
+    .toggle input:checked + .slider::before { transform: translateX(20px); }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #6c63ff;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #5a52d5; }
+    .status {
+      margin-top: 8px;
+      font-size: 11px;
+      text-align: center;
+      color: #6c63ff;
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Claude Intercepter</h1>
+
+  <div class="toggle-row">
+    <label for="enabled">Enable interception</label>
+    <label class="toggle">
+      <input type="checkbox" id="enabled" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <label for="endpoint">LiteLLM Endpoint</label>
+  <input type="text" id="endpoint" placeholder="https://your-litellm.example.com">
+
+  <label for="model">Model</label>
+  <input type="text" id="model" placeholder="claude-opus-4-6">
+
+  <label for="apiKey">API Key</label>
+  <input type="password" id="apiKey" placeholder="sk-...">
+
+  <div class="toggle-row">
+    <label for="enableThinking">Extended thinking</label>
+    <label class="toggle">
+      <input type="checkbox" id="enableThinking">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <label for="thinkingBudget">Thinking budget (tokens, max 126000)</label>
+  <input type="text" id="thinkingBudget" placeholder="10000">
+
+  <hr style="border:none;border-top:1px solid #333;margin:14px 0">
+  <h1 style="font-size:12px;margin-bottom:8px">Sync (optional)</h1>
+
+  <label for="syncUrl">Sync Server URL</label>
+  <input type="text" id="syncUrl" placeholder="https://your-sync-server.example.com">
+
+  <label for="syncKey">Sync API Key</label>
+  <input type="password" id="syncKey" placeholder="your-sync-key">
+
+  <button id="save">Save</button>
+  <div class="status" id="status"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

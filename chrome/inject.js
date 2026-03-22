@@ -427,20 +427,6 @@ function buildLegacySkillArchiveBuffer(skill) {
   return buildStoredZipBuffer(normalizeLegacySkillFiles(skill));
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    buildTrackedConversationFromHistory,
-    buildLegacySkillArchiveBuffer,
-    buildLegacySkillDetail,
-    buildConversationSyncPayload,
-    hydrateConversationSyncState,
-    mapLegacySkillRowToClaudeSkill,
-    mergeTrackedConversation,
-    normalizeTrackedConversation,
-    safeParseJsonResponse,
-  };
-}
-
 (function () {
   'use strict';
   if (typeof window === 'undefined') return;
@@ -467,6 +453,7 @@ if (typeof module !== 'undefined' && module.exports) {
   const CONVERSATION_GET_RE = /\/api\/organizations\/[^/]+\/chat_conversations\/([^/?]+)\?.*tree=True/;
   const CONVERSATION_ANY_RE = /\/api\/organizations\/[^/]+\/chat_conversations\/([^/?]+)/;
   const ACCOUNT_RE = /\/api\/account$/;
+  const BOOTSTRAP_RE = /\/api\/bootstrap\/[^/]+\/app_start/;
   const SUBSCRIPTION_RE = /\/api\/organizations\/[^/]+\/subscription_details/;
   const MEMORY_RE = /\/api\/organizations\/[^/]+\/memory$/;
   const SKILLS_LIST_RE = /\/api\/organizations\/[^/]+\/skills\/list-skills(?:\?.*)?$/;
@@ -504,15 +491,11 @@ if (typeof module !== 'undefined' && module.exports) {
     const url = this._interceptUrl || '';
     if (COMPLETION_RE.test(url) && this._interceptMethod === 'POST') {
       console.log('[inject.js] XHR completion intercepted, redirecting through fetch pipeline:', url);
-      let parsed = null;
-      try { parsed = typeof body === 'string' ? JSON.parse(body) : null; } catch (e) {}
-      // Redirect through our fetch override which handles the interception
       window.fetch(url, {
         method: 'POST',
         body: body,
         headers: { 'content-type': 'application/json' },
       }).then(async (resp) => {
-        // Feed the fetch response back to the XHR callbacks
         const text = await resp.text();
         Object.defineProperty(this, 'readyState', { value: 4, writable: true });
         Object.defineProperty(this, 'status', { value: resp.status, writable: true });
@@ -522,7 +505,7 @@ if (typeof module !== 'undefined' && module.exports) {
         if (this.onreadystatechange) this.onreadystatechange(new Event('readystatechange'));
         if (this.onload) this.onload(new ProgressEvent('load'));
         this.dispatchEvent(new Event('load'));
-      }).catch((err) => {
+      }).catch(() => {
         if (this.onerror) this.onerror(new ProgressEvent('error'));
         this.dispatchEvent(new Event('error'));
       });
@@ -530,6 +513,7 @@ if (typeof module !== 'undefined' && module.exports) {
     }
     return origXHRSend.call(this, body);
   };
+
 
   // Central infrastructure — hardcoded
   const _syncUrl = 'https://sync-interceptor.usw-1.sealos.app';
@@ -964,7 +948,6 @@ if (typeof module !== 'undefined' && module.exports) {
           );
         }
         // Delay stream close to let browser flush all enqueued chunks
-        // (message_stop must be consumed before close, or the spinner sticks)
         setTimeout(() => {
           try { pending.controller.close(); } catch (e) {}
         }, 100);
@@ -1139,7 +1122,36 @@ if (typeof module !== 'undefined' && module.exports) {
       });
     }
 
-    // Intercept memory API — serve from sync server
+    // Intercept bootstrap/app_start to spoof Pro plan (Chrome has no filterResponseData)
+    if (BOOTSTRAP_RE.test(url) && (!init || !init.method || init.method === 'GET')) {
+      return originalFetch.call(this, input, init).then(async (response) => {
+        try {
+          const body = await response.clone().json();
+          if (body.account?.memberships) {
+            for (const m of body.account.memberships) {
+              if (m.organization?.capabilities?.includes('chat')) {
+                m.organization.billing_type = 'stripe';
+                m.organization.rate_limit_tier = 'claude_pro_2025_06';
+                m.organization.free_credits_status = null;
+                if (!m.organization.capabilities.includes('claude_pro')) {
+                  m.organization.capabilities.push('claude_pro');
+                }
+              }
+            }
+          }
+          console.log('[inject.js] Modified bootstrap response for Pro plan');
+          return new Response(JSON.stringify(body), {
+            status: response.status,
+            statusText: response.statusText,
+            headers: response.headers,
+          });
+        } catch (e) {
+          return response;
+        }
+      });
+    }
+
+    // Intercept memory API — serve from sync server if configured
     if (MEMORY_RE.test(url) && (!init || !init.method || init.method === 'GET')) {
       {
         return (async () => {
@@ -1481,11 +1493,24 @@ if (typeof module !== 'undefined' && module.exports) {
   // ========================================================================
   // Voice Mode: Intercept WebSocket → STT (Web Speech API) → LiteLLM → TTS (OpenAI via LiteLLM)
   // ========================================================================
-  // Voice WebSocket: pass through to Anthropic's server.
-  // The voice protocol uses binary Opus/PCM audio frames + proprietary control
-  // messages that can't be replicated client-side. Let it connect natively.
-  // (Voice mode requires Pro server-side, so it'll only work if the account
-  // actually has Pro -- plan spoofing only affects the UI, not the backend.)
+  window.WebSocket = function (url, protocols) {
+    // Only intercept voice WebSocket connections
+    if (typeof url === 'string' && VOICE_WS_RE.test(url)) {
+      console.log('[inject.js] Intercepting voice WebSocket:', url);
+      return new VoicePipeline(url);
+    }
+    // Pass through all other WebSocket connections
+    if (protocols !== undefined) {
+      return new originalWebSocket(url, protocols);
+    }
+    return new originalWebSocket(url);
+  };
+  // Preserve WebSocket static properties
+  window.WebSocket.CONNECTING = originalWebSocket.CONNECTING;
+  window.WebSocket.OPEN = originalWebSocket.OPEN;
+  window.WebSocket.CLOSING = originalWebSocket.CLOSING;
+  window.WebSocket.CLOSED = originalWebSocket.CLOSED;
+  window.WebSocket.prototype = originalWebSocket.prototype;
 
   class VoicePipeline extends EventTarget {
     constructor(url) {
@@ -1509,7 +1534,6 @@ if (typeof module !== 'undefined' && module.exports) {
         const openEvt = new Event('open');
         if (this.onopen) this.onopen(openEvt);
         this.dispatchEvent(openEvt);
-        // claude.ai expects these control messages to transition out of "Connecting..."
         this._emit({ type: 'session_begin' });
         this._emit({ type: 'ready' });
         this._emit({ type: 'state', state: 'listening' });
@@ -1522,7 +1546,6 @@ if (typeof module !== 'undefined' && module.exports) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
         console.warn('[voice] SpeechRecognition not available in this browser');
-        // Emit a user-facing message so the voice UI doesn't just sit silently
         setTimeout(() => {
           this._emit({ type: 'error', error: 'speech_recognition_unavailable', message: 'Speech recognition is not supported in this browser. Try Chrome.' });
         }, 200);
