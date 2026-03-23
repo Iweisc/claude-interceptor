@@ -1,0 +1,231 @@
+'use strict';
+
+function clonePayload(payload) {
+  return payload && typeof payload === 'object' ? structuredClone(payload) : {};
+}
+
+function withClaudeProCapability(capabilities) {
+  const next = Array.isArray(capabilities) ? [...capabilities] : [];
+  if (!next.includes('claude_pro')) {
+    next.push('claude_pro');
+  }
+  return next;
+}
+
+function patchOrganization(organization) {
+  if (!organization || typeof organization !== 'object') return organization;
+
+  return {
+    ...organization,
+    billing_type: 'stripe',
+    rate_limit_tier: 'claude_pro_2025_06',
+    free_credits_status: null,
+    api_disabled_reason: null,
+    capabilities: withClaudeProCapability(organization.capabilities),
+  };
+}
+
+function patchMemberships(memberships) {
+  if (!Array.isArray(memberships)) return memberships;
+
+  return memberships.map((membership) => {
+    if (!membership || typeof membership !== 'object') return membership;
+    return {
+      ...membership,
+      organization: patchOrganization(membership.organization),
+    };
+  });
+}
+
+function patchModels(models) {
+  if (!Array.isArray(models)) return models;
+
+  return models.map((model) => {
+    if (!model || typeof model !== 'object') return model;
+    return {
+      ...model,
+      minimum_tier: 'free',
+    };
+  });
+}
+
+function patchFeatureCollection(features) {
+  if (!features || typeof features !== 'object') return features;
+
+  const next = {};
+
+  for (const [featureId, featureValue] of Object.entries(features)) {
+    if (!featureValue || typeof featureValue !== 'object') {
+      next[featureId] = featureValue;
+      continue;
+    }
+
+    const patchedFeature = { ...featureValue };
+
+    if (patchedFeature.defaultValue?.models) {
+      patchedFeature.defaultValue = {
+        ...patchedFeature.defaultValue,
+        models: patchModels(patchedFeature.defaultValue.models),
+      };
+    }
+
+    if (Array.isArray(patchedFeature.rules)) {
+      patchedFeature.rules = patchedFeature.rules.map((rule) => {
+        if (!rule || typeof rule !== 'object' || !rule.force?.models) return rule;
+        return {
+          ...rule,
+          force: {
+            ...rule.force,
+            models: patchModels(rule.force.models),
+          },
+        };
+      });
+    }
+
+    next[featureId] = patchedFeature;
+  }
+
+  return next;
+}
+
+function patchAccountPayload(payload) {
+  const next = clonePayload(payload);
+
+  if (Array.isArray(next.memberships)) {
+    next.memberships = patchMemberships(next.memberships);
+  }
+
+  if (next.account?.memberships) {
+    next.account = {
+      ...next.account,
+      memberships: patchMemberships(next.account.memberships),
+    };
+  }
+
+  if (next.organization) {
+    next.organization = patchOrganization(next.organization);
+  }
+
+  if ('capabilities' in next || Array.isArray(next.capabilities)) {
+    next.capabilities = withClaudeProCapability(next.capabilities);
+  }
+
+  if ('billing_type' in next) {
+    next.billing_type = 'stripe';
+  }
+
+  return next;
+}
+
+function patchBootstrapPayload(payload) {
+  const next = patchAccountPayload(payload);
+
+  if (next.growthbook?.attributes) {
+    next.growthbook = {
+      ...next.growthbook,
+      attributes: {
+        ...next.growthbook.attributes,
+        isPro: true,
+      },
+    };
+  }
+
+  if (next.org_growthbook?.user || next.org_growthbook?.features) {
+    next.org_growthbook = {
+      ...next.org_growthbook,
+      user: next.org_growthbook?.user ? {
+        ...next.org_growthbook.user,
+        orgType: 'claude_pro',
+        isPro: true,
+        isMax: false,
+      } : next.org_growthbook?.user,
+      features: patchFeatureCollection(next.org_growthbook?.features),
+    };
+  }
+
+  if (next.org_statsig?.user) {
+    next.org_statsig = {
+      ...next.org_statsig,
+      user: {
+        ...next.org_statsig.user,
+        orgType: 'claude_pro',
+        isPro: true,
+      },
+    };
+  }
+
+  if (Array.isArray(next.models)) {
+    next.models = patchModels(next.models);
+  }
+
+  return next;
+}
+
+function extractAccountEmail(payload) {
+  if (typeof payload?.email_address === 'string' && payload.email_address.trim()) {
+    return payload.email_address.trim();
+  }
+
+  if (typeof payload?.email === 'string' && payload.email.trim()) {
+    return payload.email.trim();
+  }
+
+  return '';
+}
+
+function buildUpstreamHeaders(requestHeaders, cookieHeader) {
+  const headers = {
+    accept: requestHeaders.accept || 'application/json',
+  };
+
+  if (cookieHeader) {
+    headers.cookie = cookieHeader;
+  }
+
+  if (requestHeaders['user-agent']) {
+    headers['user-agent'] = requestHeaders['user-agent'];
+  }
+
+  if (requestHeaders['accept-language']) {
+    headers['accept-language'] = requestHeaders['accept-language'];
+  }
+
+  return headers;
+}
+
+async function fetchUpstreamJson({ fetchImpl, url, headers, timeoutMs }) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImpl(url, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    const text = await response.text();
+
+    let payload = null;
+    try {
+      payload = JSON.parse(text);
+    } catch (error) {
+      payload = null;
+    }
+
+    return {
+      response,
+      text,
+      payload,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+module.exports = {
+  buildUpstreamHeaders,
+  extractAccountEmail,
+  fetchUpstreamJson,
+  patchAccountPayload,
+  patchBootstrapPayload,
+};
