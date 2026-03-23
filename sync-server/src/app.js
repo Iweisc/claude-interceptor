@@ -11,7 +11,11 @@ const {
   patchAccountPayload,
   patchBootstrapPayload,
 } = require('./services/claude-upstream');
+const { createConversationRepository } = require('./repositories/conversations');
+const { createMemoryRepository } = require('./repositories/memories');
 const { createSessionIdentityCache } = require('./services/session-identity');
+const { registerConversationRoutes } = require('./routes/conversations');
+const { registerMemoryRoutes } = require('./routes/memory');
 
 function createApp({ config, pool, repositories = {}, services = {} }) {
   const appConfig = {
@@ -24,9 +28,12 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
   const sessionIdentityCache = services.sessionIdentityCache || createSessionIdentityCache({
     ttlMs: appConfig.sessionCacheTtlMs,
   });
+  const appRepositories = {
+    conversations: repositories.conversations || (pool ? createConversationRepository(pool) : null),
+    memories: repositories.memories || (pool ? createMemoryRepository(pool) : null),
+  };
 
   void pool;
-  void repositories;
 
   const app = express();
 
@@ -103,6 +110,45 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
   app.get('/api/bootstrap/:id/app_start', async (req, res) => {
     await handlePatchedJsonProxy(req, res, patchBootstrapPayload);
   });
+
+  app.use('/api/organizations/:orgId', async (req, res, next) => {
+    try {
+      const cookieHeader = typeof req.headers['x-forward-cookie'] === 'string'
+        ? req.headers['x-forward-cookie']
+        : '';
+      let userId = sessionIdentityCache.get(cookieHeader);
+
+      if (!userId && cookieHeader) {
+        const upstream = await fetchUpstreamJson({
+          fetchImpl,
+          url: new URL('/api/account', appConfig.claudeUpstreamBaseUrl),
+          headers: buildUpstreamHeaders(req.headers, cookieHeader),
+          timeoutMs: appConfig.requestTimeoutMs,
+        });
+
+        if (upstream.payload) {
+          const patchedPayload = patchAccountPayload(upstream.payload);
+          const email = extractAccountEmail(patchedPayload);
+          if (email) {
+            userId = sessionIdentityCache.set(cookieHeader, email);
+          }
+        }
+      }
+
+      if (!userId) {
+        res.status(401).json({ error: 'Unable to resolve user session' });
+        return;
+      }
+
+      req.userId = userId;
+      next();
+    } catch (error) {
+      res.status(502).json({ error: 'Unable to resolve user session' });
+    }
+  });
+
+  registerConversationRoutes(app, appRepositories);
+  registerMemoryRoutes(app, appRepositories);
 
   return app;
 }

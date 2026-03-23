@@ -8,7 +8,7 @@ function formatMemoriesMarkdown(rows) {
 }
 
 function createMemoryRepository(pool) {
-  return {
+  const repository = {
     async listMemories(userId) {
       const { rows } = await pool.query(
         `SELECT id, text, created_at
@@ -20,7 +20,7 @@ function createMemoryRepository(pool) {
       return rows;
     },
     async getFormattedMemories(userId) {
-      const rows = await this.listMemories(userId);
+      const rows = await repository.listMemories(userId);
       return {
         formatted: formatMemoriesMarkdown(rows),
         count: rows.length,
@@ -54,6 +54,8 @@ function createMemoryRepository(pool) {
       return rowCount > 0;
     },
   };
+
+  return repository;
 }
 
 module.exports = {

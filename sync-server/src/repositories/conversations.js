@@ -141,12 +141,14 @@ function createConversationRepository(pool) {
       return createConversation(pool, context, input, options);
     },
     async updateConversationSettings(context, settingsPatch, options) {
+      const patch = isPlainObject(settingsPatch) ? settingsPatch : {};
+      const { title, ...settingsOnly } = patch;
       return updateConversation(pool, context, (row) => ({
         ...row,
-        title: typeof settingsPatch?.title === 'string' ? settingsPatch.title : row.title,
+        title: typeof title === 'string' ? title : row.title,
         settings: {
           ...row.settings,
-          ...(isPlainObject(settingsPatch) ? settingsPatch : {}),
+          ...settingsOnly,
         },
       }), options);
     },
