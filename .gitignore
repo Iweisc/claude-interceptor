@@ -1,5 +1,6 @@
 .playwright-mcp/
 test-results/
+.worktrees/
 *.log
 sync-server/node_modules/
 sync-server/.env
