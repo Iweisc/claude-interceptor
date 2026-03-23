@@ -3,6 +3,7 @@
 const PROXY_ORIGIN = 'https://proxy-ns-0ffzk4u2.usw-1.sealos.app';
 const SETTINGS_KEY = '__CLAUDE_PROXY_SETTINGS__';
 const USER_EMAIL_KEY = '__CLAUDE_PROXY_USER_EMAIL__';
+const COOKIE_HEADER_KEY = '__CLAUDE_PROXY_COOKIE_HEADER__';
 const COMPLETION_RE = /\/api\/organizations\/[^/]+\/chat_conversations\/[^/]+\/(completion|retry_completion)$/;
 const BOOTSTRAP_RE = /^\/api\/bootstrap(?:\/[^/]+\/app_start)?$/;
 const ARTIFACT_TOOLS_RE = /^\/artifacts\/wiggle_artifact\/[^/]+\/tools/;
@@ -34,6 +35,9 @@ const INITIAL_PROXY_SETTINGS = typeof document !== 'undefined'
   : { ...DEFAULT_PROXY_SETTINGS };
 const INITIAL_PROXY_USER_EMAIL = typeof document !== 'undefined' && typeof document.currentScript?.dataset?.userEmail === 'string'
   ? document.currentScript.dataset.userEmail.trim().toLowerCase()
+  : '';
+const INITIAL_PROXY_COOKIE_HEADER = typeof document !== 'undefined' && typeof document.currentScript?.dataset?.cookieHeader === 'string'
+  ? document.currentScript.dataset.cookieHeader
   : '';
 
 function shouldBypassProxy(pathname, pagePath) {
@@ -107,7 +111,7 @@ function isCompletionUrl(url) {
 
 function buildProxyHeaders(existingHeaders, settings) {
   const headers = new Headers(existingHeaders || {});
-  headers.set('X-Forward-Cookie', document.cookie || '');
+  headers.set('X-Forward-Cookie', getProxyCookieHeader() || document.cookie || '');
   const userEmail = getProxyUserEmail();
   if (userEmail) headers.set('X-User-Email', userEmail);
   if (settings.endpoint) headers.set('X-LiteLLM-Endpoint', settings.endpoint);
@@ -137,6 +141,27 @@ function getProxyUserEmail() {
     return localStorage.getItem(USER_EMAIL_KEY) || '';
   } catch (error) {
     return '';
+  }
+}
+
+function getProxyCookieHeader() {
+  if (typeof window === 'undefined') {
+    return globalThis.__codexProxyCookieHeader || '';
+  }
+  if (typeof window[COOKIE_HEADER_KEY] === 'string' && window[COOKIE_HEADER_KEY]) {
+    return window[COOKIE_HEADER_KEY];
+  }
+  try {
+    return localStorage.getItem(COOKIE_HEADER_KEY) || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function setProxyCookieHeaderForTests(cookieHeader) {
+  globalThis.__codexProxyCookieHeader = cookieHeader;
+  if (typeof window !== 'undefined') {
+    window[COOKIE_HEADER_KEY] = cookieHeader;
   }
 }
 
@@ -260,10 +285,13 @@ async function rewriteFetchRequest(input, init) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     PROXY_ORIGIN,
+    getProxyCookieHeader,
     getProxyUserEmail,
     mergeCompletionBodyWithSettings,
+    readProxyCookieHeaderFromDataAttributes: (dataset) => typeof dataset?.cookieHeader === 'string' ? dataset.cookieHeader : '',
     readProxySettingsFromDataAttributes,
     rewriteClaudeUrl,
+    setProxyCookieHeaderForTests,
     setProxyUserEmailForTests,
   };
 }
@@ -274,6 +302,9 @@ if (typeof module !== 'undefined' && module.exports) {
   window[SETTINGS_KEY] = getProxySettings();
   if (INITIAL_PROXY_USER_EMAIL) {
     window[USER_EMAIL_KEY] = INITIAL_PROXY_USER_EMAIL;
+  }
+  if (INITIAL_PROXY_COOKIE_HEADER) {
+    window[COOKIE_HEADER_KEY] = INITIAL_PROXY_COOKIE_HEADER;
   }
 
   try {

@@ -31,13 +31,17 @@
     };
   } catch (error) {}
 
-  chrome.storage.local.get('settings', async ({ settings }) => {
-    let userEmail = '';
+  async function getCookieHeader() {
     try {
-      const response = await fetch('/api/account', { credentials: 'include' });
-      const body = await response.json();
-      userEmail = body?.email_address || body?.email || '';
-    } catch (error) {}
+      const response = await chrome.runtime.sendMessage({ type: 'CLAUDE_PROXY_GET_COOKIE_HEADER' });
+      return response?.cookieHeader || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  chrome.storage.local.get('settings', async ({ settings }) => {
+    const cookieHeader = await getCookieHeader();
 
     const script = document.createElement('script');
     script.dataset.endpoint = settings?.endpoint || '';
@@ -45,7 +49,7 @@
     script.dataset.apiKey = settings?.apiKey || '';
     script.dataset.enableThinking = String(settings?.enableThinking === true);
     script.dataset.thinkingBudget = String(Number.parseInt(settings?.thinkingBudget, 10) || 10000);
-    script.dataset.userEmail = userEmail;
+    script.dataset.cookieHeader = cookieHeader;
     script.src = chrome.runtime.getURL('inject.js');
     script.onload = () => script.remove();
     (document.head || document.documentElement).appendChild(script);

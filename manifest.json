@@ -5,9 +5,13 @@
   "description": "Route claude.ai inference through your own LiteLLM proxy",
   "permissions": [
     "storage",
+    "cookies",
     "*://claude.ai/*",
     "https://proxy-ns-0ffzk4u2.usw-1.sealos.app/*"
   ],
+  "background": {
+    "scripts": ["background.js"]
+  },
   "content_scripts": [
     {
       "matches": ["*://claude.ai/*"],

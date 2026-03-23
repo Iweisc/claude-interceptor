@@ -31,13 +31,17 @@
     };
   } catch (error) {}
 
-  browser.storage.local.get('settings').then(async ({ settings }) => {
-    let userEmail = '';
+  async function getCookieHeader() {
     try {
-      const response = await fetch('/api/account', { credentials: 'include' });
-      const body = await response.json();
-      userEmail = body?.email_address || body?.email || '';
-    } catch (error) {}
+      const response = await browser.runtime.sendMessage({ type: 'CLAUDE_PROXY_GET_COOKIE_HEADER' });
+      return response?.cookieHeader || '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  browser.storage.local.get('settings').then(async ({ settings }) => {
+    const cookieHeader = await getCookieHeader();
 
     const script = document.createElement('script');
     script.dataset.endpoint = settings?.endpoint || '';
@@ -45,7 +49,7 @@
     script.dataset.apiKey = settings?.apiKey || '';
     script.dataset.enableThinking = String(settings?.enableThinking === true);
     script.dataset.thinkingBudget = String(Number.parseInt(settings?.thinkingBudget, 10) || 10000);
-    script.dataset.userEmail = userEmail;
+    script.dataset.cookieHeader = cookieHeader;
     script.src = browser.runtime.getURL('inject.js');
     script.onload = () => script.remove();
     (document.head || document.documentElement).appendChild(script);
@@ -56,7 +60,7 @@
     script.dataset.apiKey = '';
     script.dataset.enableThinking = 'false';
     script.dataset.thinkingBudget = '10000';
-    script.dataset.userEmail = '';
+    script.dataset.cookieHeader = '';
     script.src = browser.runtime.getURL('inject.js');
     script.onload = () => script.remove();
     (document.head || document.documentElement).appendChild(script);

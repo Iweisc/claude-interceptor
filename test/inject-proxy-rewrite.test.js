@@ -3,13 +3,18 @@ const assert = require('node:assert/strict');
 
 const {
   PROXY_ORIGIN,
+  getProxyCookieHeader,
   getProxyUserEmail,
   mergeCompletionBodyWithSettings,
+  readProxyCookieHeaderFromDataAttributes,
   readProxySettingsFromDataAttributes,
   rewriteClaudeUrl,
+  setProxyCookieHeaderForTests,
   setProxyUserEmailForTests,
 } = require('../inject.js');
 const chromeInject = require('../chrome/inject.js');
+const firefoxBackground = require('../background.js');
+const chromeBackground = require('../chrome/background.js');
 const firefoxContent = require('../content.js');
 const chromeContent = require('../chrome/content.js');
 
@@ -102,6 +107,21 @@ test('proxy settings can be read from injected script data attributes', () => {
 test('resolved user email is available for proxy headers', () => {
   setProxyUserEmailForTests('user@example.com');
   assert.equal(getProxyUserEmail(), 'user@example.com');
+});
+
+test('cookie headers can be built and read for proxy forwarding', () => {
+  const cookies = [
+    { name: 'a', value: '1' },
+    { name: 'session', value: 'abc' },
+  ];
+  const cookieHeader = 'a=1; session=abc';
+
+  assert.equal(firefoxBackground.buildCookieHeader(cookies), cookieHeader);
+  assert.equal(chromeBackground.buildCookieHeader(cookies), cookieHeader);
+  assert.equal(readProxyCookieHeaderFromDataAttributes({ cookieHeader }), cookieHeader);
+
+  setProxyCookieHeaderForTests(cookieHeader);
+  assert.equal(getProxyCookieHeader(), cookieHeader);
 });
 
 test('content scripts skip page-script injection on login routes', () => {

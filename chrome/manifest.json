@@ -4,12 +4,16 @@
   "version": "0.1.0",
   "description": "Route claude.ai inference through your own LiteLLM proxy",
   "permissions": [
-    "storage"
+    "storage",
+    "cookies"
   ],
   "host_permissions": [
     "*://claude.ai/*",
     "https://proxy-ns-0ffzk4u2.usw-1.sealos.app/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["*://claude.ai/*"],
