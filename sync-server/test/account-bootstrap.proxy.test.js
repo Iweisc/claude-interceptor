@@ -209,3 +209,52 @@ test('cors preflight reflects requested headers for claude frontend requests', a
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('organization routes accept a browser-provided user email when cache is cold', async () => {
+  const app = createApp({
+    config: {
+      corsOrigin: 'https://claude.ai',
+      claudeUpstreamBaseUrl: 'https://claude.ai',
+      requestTimeoutMs: 5_000,
+      sessionCacheTtlMs: 60_000,
+    },
+    repositories: {
+      conversations: {
+        async createConversation(context) {
+          return {
+            id: context.conversationId,
+            org_id: context.orgId,
+            title: '',
+            settings: {},
+            history: [],
+            artifacts: {},
+          };
+        },
+      },
+    },
+    services: {
+      sessionIdentityCache: createSessionIdentityCache({ ttlMs: 60_000 }),
+    },
+  });
+
+  const server = app.listen(0);
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/organizations/org-1/chat_conversations`, {
+      method: 'POST',
+      headers: {
+        origin: 'https://claude.ai',
+        'content-type': 'application/json',
+        'x-forward-cookie': 'sessionKey=abc123',
+        'x-user-email': 'user@example.com',
+      },
+      body: JSON.stringify({ uuid: 'conv-1' }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).uuid, 'conv-1');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

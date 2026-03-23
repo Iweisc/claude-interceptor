@@ -3,24 +3,26 @@ const assert = require('node:assert/strict');
 
 const {
   PROXY_ORIGIN,
+  getProxyUserEmail,
   mergeCompletionBodyWithSettings,
   readProxySettingsFromDataAttributes,
   rewriteClaudeUrl,
+  setProxyUserEmailForTests,
 } = require('../inject.js');
 const chromeInject = require('../chrome/inject.js');
 
 test('api and artifact routes are rewritten to the proxy origin', () => {
   assert.equal(
-    rewriteClaudeUrl('/api/account'),
-    `${PROXY_ORIGIN}/api/account`
+    rewriteClaudeUrl('/api/organizations/org-1/chat_conversations'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/chat_conversations`
   );
   assert.equal(
     rewriteClaudeUrl('/wiggle/download-file?path=%2Fmnt%2Fuser-data%2Foutputs%2Fdemo.js'),
     `${PROXY_ORIGIN}/wiggle/download-file?path=%2Fmnt%2Fuser-data%2Foutputs%2Fdemo.js`
   );
   assert.equal(
-    rewriteClaudeUrl('https://claude.ai/api/account'),
-    `${PROXY_ORIGIN}/api/account`
+    rewriteClaudeUrl('https://claude.ai/api/organizations/org-1/chat_conversations'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/chat_conversations`
   );
 });
 
@@ -93,4 +95,9 @@ test('proxy settings can be read from injected script data attributes', () => {
     chromeInject.readProxySettingsFromDataAttributes(dataset),
     readProxySettingsFromDataAttributes(dataset)
   );
+});
+
+test('resolved user email is available for proxy headers', () => {
+  setProxyUserEmailForTests('user@example.com');
+  assert.equal(getProxyUserEmail(), 'user@example.com');
 });

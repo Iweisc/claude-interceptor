@@ -13,13 +13,22 @@
     };
   } catch (error) {}
 
-  chrome.storage.local.get('settings', ({ settings }) => {
+  chrome.storage.local.get('settings', async ({ settings }) => {
+    let userEmail = '';
+    if (location.pathname !== '/login') {
+      try {
+        const response = await fetch('/api/account', { credentials: 'include' });
+        const body = await response.json();
+        userEmail = body?.email_address || body?.email || '';
+      } catch (error) {}
+    }
     const script = document.createElement('script');
     script.dataset.endpoint = settings?.endpoint || '';
     script.dataset.model = settings?.model || 'claude-sonnet-4-6';
     script.dataset.apiKey = settings?.apiKey || '';
     script.dataset.enableThinking = String(settings?.enableThinking === true);
     script.dataset.thinkingBudget = String(Number.parseInt(settings?.thinkingBudget, 10) || 10000);
+    script.dataset.userEmail = userEmail;
     script.src = chrome.runtime.getURL('inject.js');
     script.onload = () => script.remove();
     (document.head || document.documentElement).appendChild(script);

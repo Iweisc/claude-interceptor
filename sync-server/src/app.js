@@ -135,7 +135,13 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
       const cookieHeader = typeof req.headers['x-forward-cookie'] === 'string'
         ? req.headers['x-forward-cookie']
         : '';
-      let userId = sessionIdentityCache.get(cookieHeader);
+      let userId = typeof req.headers['x-user-email'] === 'string'
+        ? req.headers['x-user-email'].trim().toLowerCase()
+        : '';
+
+      if (!userId) {
+        userId = sessionIdentityCache.get(cookieHeader);
+      }
 
       if (!userId && cookieHeader) {
         const upstream = await fetchUpstreamJson({

@@ -26,7 +26,7 @@ spec:
           command:
             - sh
             - -c
-            - tar -xzf /app-src/app.tgz -C /work && cd /work && npm ci --omit=dev && node index.js
+            - mkdir -p /work && rm -rf /work/* && tar -xzf /app-src/app.tgz -C /work && cd /work && npm ci --omit=dev && node index.js
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
