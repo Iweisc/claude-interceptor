@@ -288,3 +288,44 @@ test('organization routes accept a browser-provided user email when cache is col
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('unowned organization routes pass through without requiring resolved user identity', async () => {
+  const requests = [];
+  const app = createApp({
+    config: {
+      corsOrigin: 'https://claude.ai',
+      claudeUpstreamBaseUrl: 'https://claude.ai',
+      requestTimeoutMs: 5_000,
+      sessionCacheTtlMs: 60_000,
+    },
+    services: {
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options });
+        return new Response(JSON.stringify({ ok: true, route: 'list_styles' }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+          },
+        });
+      },
+    },
+  });
+
+  const server = app.listen(0);
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/organizations/org-1/list_styles`, {
+      headers: {
+        origin: 'https://claude.ai',
+        'x-forward-cookie': 'sessionKey=abc123',
+      },
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, route: 'list_styles' });
+    assert.equal(String(requests[0].url), 'https://claude.ai/api/organizations/org-1/list_styles');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

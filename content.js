@@ -77,10 +77,4 @@
     (document.head || document.documentElement).appendChild(script);
   });
 
-  const style = document.createElement('style');
-  style.textContent = `
-    a[href="/upgrade"] { display: none !important; }
-    [aria-disabled="true"] { pointer-events: auto !important; opacity: 1 !important; }
-  `;
-  (document.head || document.documentElement).appendChild(style);
 })();

@@ -201,6 +201,78 @@ test('default streaming injects message_limit before message_stop', async () => 
   assert.ok(output.indexOf('event: message_limit') < output.indexOf('event: message_stop'));
 });
 
+test('default streaming enables thinking when conversation settings use paprika_mode extended', async () => {
+  const history = [];
+  let capturedRequestBody = null;
+  const req = {
+    body: {
+      prompt: 'hello world',
+      model: 'claude-sonnet-4-6',
+      turn_message_uuids: {
+        human_message_uuid: 'u1',
+        assistant_message_uuid: 'a1',
+      },
+    },
+    headers: {
+      'x-litellm-endpoint': 'https://litellm.example.com',
+      'x-litellm-key': 'secret',
+    },
+    on() {},
+  };
+  const res = createResponseRecorder();
+
+  await runCompletion({
+    req,
+    res,
+    context: {
+      userId: 'user@example.com',
+      orgId: 'org-1',
+      conversationId: 'conv-1',
+    },
+    repositories: {
+      conversations: {
+        async appendUserTurn(_context, turn) {
+          history.push(turn);
+        },
+        async appendAssistantTurn(_context, turn) {
+          history.push(turn);
+        },
+        async getConversation() {
+          return {
+            id: 'conv-1',
+            org_id: 'org-1',
+            title: '',
+            settings: { paprika_mode: 'extended' },
+            history: [...history],
+            artifacts: {},
+          };
+        },
+      },
+      memories: {
+        async getFormattedMemories() {
+          return { formatted: '', count: 0 };
+        },
+      },
+    },
+    services: {
+      fetchImpl: async (_url, options) => {
+        capturedRequestBody = JSON.parse(options.body);
+        return createEventStreamResponse([
+          'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\n',
+          'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n',
+          'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+        ]);
+      },
+    },
+    isRetry: false,
+  });
+
+  assert.deepEqual(capturedRequestBody.thinking, {
+    type: 'enabled',
+    budget_tokens: 10000,
+  });
+});
+
 test('tree=True reflects the freshly stored assistant turn after a streamed completion', async () => {
   const conversation = {
     id: 'conv-1',

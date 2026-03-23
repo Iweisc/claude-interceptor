@@ -352,9 +352,10 @@ async function defaultStreamConversation({ req, res, context, repositories, serv
   const systemPrompt = body.system_prompt || buildSystemPrompt({ body, memories });
   const tools = buildToolDefinitions({ isTemporary });
   const modelToUse = body.model || settings.model || 'claude-sonnet-4-6';
+  const conversationThinkingEnabled = settings.paprika_mode === 'extended' || settings.paprikaMode === 'extended';
   const thinkingEnabled = body._thinkingEnabled !== undefined
     ? body._thinkingEnabled === true
-    : Boolean(settings.enableThinking);
+    : (conversationThinkingEnabled || Boolean(settings.enableThinking));
   const budgetTokens = thinkingEnabled
     ? Math.min(Number.parseInt(body._thinkingBudget, 10) || settings.thinkingBudget || 10000, 126000)
     : 0;

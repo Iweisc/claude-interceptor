@@ -179,9 +179,9 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
     }
   }
 
-  app.use('/api/organizations/:orgId', attachResolvedUser);
+  app.use('/api/organizations/:orgId/chat_conversations', attachResolvedUser);
+  app.use('/api/organizations/:orgId/memory', attachResolvedUser);
   app.use('/wiggle', attachResolvedUser);
-  app.use('/artifacts', attachResolvedUser);
 
   registerConversationRoutes(app, appRepositories);
   registerCompletionRoutes(app, {
