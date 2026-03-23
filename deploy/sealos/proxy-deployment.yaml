@@ -13,9 +13,26 @@ spec:
       labels:
         app: claude-proxy
     spec:
+      securityContext:
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: claude-proxy
-          image: registry.example.com/claude-proxy:latest
+          image: node:20-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - tar -xzf /app-src/app.tgz -C /work && cd /work && npm ci --omit=dev && node index.js
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
           ports:
             - containerPort: 3985
               name: http
@@ -32,15 +49,34 @@ spec:
               value: "300000"
             - name: REQUEST_TIMEOUT_MS
               value: "120000"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: app-code
+              mountPath: /app-src
+              readOnly: true
+            - name: app-work
+              mountPath: /work
           readinessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
               port: http
-            initialDelaySeconds: 15
-            periodSeconds: 20
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: app-code
+          configMap:
+            name: claude-proxy-code
+        - name: app-work
+          emptyDir: {}
