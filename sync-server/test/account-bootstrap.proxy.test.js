@@ -210,6 +210,36 @@ test('cors preflight reflects requested headers for claude frontend requests', a
   }
 });
 
+test('cors preflight allows requested patch method for account settings', async () => {
+  const app = createApp({
+    config: {
+      corsOrigin: 'https://claude.ai',
+      claudeUpstreamBaseUrl: 'https://claude.ai',
+      requestTimeoutMs: 5_000,
+      sessionCacheTtlMs: 60_000,
+    },
+  });
+
+  const server = app.listen(0);
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/account/settings`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://claude.ai',
+        'access-control-request-method': 'PATCH',
+        'access-control-request-headers': 'anthropic-anonymous-id,content-type,x-forward-cookie',
+      },
+    });
+
+    assert.equal(response.status, 204);
+    assert.match(response.headers.get('access-control-allow-methods') || '', /\bPATCH\b/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('organization routes accept a browser-provided user email when cache is cold', async () => {
   const app = createApp({
     config: {

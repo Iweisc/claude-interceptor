@@ -61,14 +61,21 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
     const requestedHeaders = typeof req.headers['access-control-request-headers'] === 'string'
       ? req.headers['access-control-request-headers']
       : '';
+    const requestedMethod = typeof req.headers['access-control-request-method'] === 'string'
+      ? req.headers['access-control-request-method'].toUpperCase()
+      : '';
 
     if (origin === appConfig.corsOrigin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Vary', 'Origin, Access-Control-Request-Headers');
+      res.setHeader('Vary', 'Origin, Access-Control-Request-Headers, Access-Control-Request-Method');
     }
 
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    const allowedMethods = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']);
+    if (requestedMethod) {
+      allowedMethods.add(requestedMethod);
+    }
+    res.setHeader('Access-Control-Allow-Methods', [...allowedMethods].join(', '));
     res.setHeader(
       'Access-Control-Allow-Headers',
       requestedHeaders || 'Content-Type, Authorization, X-Forward-Cookie, X-LiteLLM-Endpoint, X-LiteLLM-Key'
