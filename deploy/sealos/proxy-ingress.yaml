@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: claude-proxy
+  namespace: ns-0ffzk4u2
+spec:
+  tls:
+    - hosts:
+        - proxy-ns-0ffzk4u2.usw-1.sealos.app
+      secretName: wildcard-cert
+  rules:
+    - host: proxy-ns-0ffzk4u2.usw-1.sealos.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: claude-proxy
+                port:
+                  number: 80

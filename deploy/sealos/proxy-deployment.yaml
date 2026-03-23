@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claude-proxy
+  namespace: ns-0ffzk4u2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: claude-proxy
+  template:
+    metadata:
+      labels:
+        app: claude-proxy
+    spec:
+      containers:
+        - name: claude-proxy
+          image: registry.example.com/claude-proxy:latest
+          ports:
+            - containerPort: 3985
+              name: http
+          env:
+            - name: PORT
+              value: "3985"
+            - name: DATABASE_URL
+              value: postgresql://postgres:sxkpf2sh@chat-server-postgresql.ns-0ffzk4u2.svc.cluster.local:5432/
+            - name: CLAUDE_UPSTREAM_BASE_URL
+              value: https://claude.ai
+            - name: SEARXNG_URL
+              value: https://searxng-ns-0ffzk4u2.usw-1.sealos.app
+            - name: SESSION_CACHE_TTL_MS
+              value: "300000"
+            - name: REQUEST_TIMEOUT_MS
+              value: "120000"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
