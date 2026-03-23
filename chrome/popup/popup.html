@@ -103,14 +103,6 @@
 <body>
   <h1>Claude Intercepter</h1>
 
-  <div class="toggle-row">
-    <label for="enabled">Enable interception</label>
-    <label class="toggle">
-      <input type="checkbox" id="enabled" checked>
-      <span class="slider"></span>
-    </label>
-  </div>
-
   <label for="endpoint">LiteLLM Endpoint</label>
   <input type="text" id="endpoint" placeholder="https://your-litellm.example.com">
 
@@ -130,15 +122,6 @@
 
   <label for="thinkingBudget">Thinking budget (tokens, max 126000)</label>
   <input type="text" id="thinkingBudget" placeholder="10000">
-
-  <hr style="border:none;border-top:1px solid #333;margin:14px 0">
-  <h1 style="font-size:12px;margin-bottom:8px">Sync (optional)</h1>
-
-  <label for="syncUrl">Sync Server URL</label>
-  <input type="text" id="syncUrl" placeholder="https://your-sync-server.example.com">
-
-  <label for="syncKey">Sync API Key</label>
-  <input type="password" id="syncKey" placeholder="your-sync-key">
 
   <button id="save">Save</button>
   <div class="status" id="status"></div>

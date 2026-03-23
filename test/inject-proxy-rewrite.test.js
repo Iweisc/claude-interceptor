@@ -6,6 +6,7 @@ const {
   mergeCompletionBodyWithSettings,
   rewriteClaudeUrl,
 } = require('../inject.js');
+const chromeInject = require('../chrome/inject.js');
 
 test('api and artifact routes are rewritten to the proxy origin', () => {
   assert.equal(
@@ -32,4 +33,23 @@ test('stored popup settings overlay model and thinking on completion bodies', ()
   assert.equal(body.model, 'claude-sonnet-4-6');
   assert.equal(body._thinkingEnabled, true);
   assert.equal(body._thinkingBudget, 10000);
+});
+
+test('chrome and firefox injectors share identical rewrite behavior', () => {
+  assert.equal(
+    chromeInject.rewriteClaudeUrl('/api/account'),
+    rewriteClaudeUrl('/api/account')
+  );
+  assert.deepEqual(
+    chromeInject.mergeCompletionBodyWithSettings({ prompt: 'hi' }, {
+      model: 'claude-sonnet-4-6',
+      enableThinking: true,
+      thinkingBudget: 10000,
+    }),
+    mergeCompletionBodyWithSettings({ prompt: 'hi' }, {
+      model: 'claude-sonnet-4-6',
+      enableThinking: true,
+      thinkingBudget: 10000,
+    })
+  );
 });
