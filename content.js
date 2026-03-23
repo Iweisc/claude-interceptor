@@ -1,92 +1,50 @@
 (function () {
   'use strict';
 
-  // Clear the React Query IDB cache (content scripts share origin with the page).
-  // The page preloads this cache from an inline script in the HTML. We clear it here
-  // (document_start) so the preload finds nothing and falls back to a network fetch,
-  // which background.js modifies via filterResponseData.
+  function injectScript(textContent) {
+    const script = document.createElement('script');
+    script.textContent = textContent;
+    (document.head || document.documentElement).appendChild(script);
+    script.remove();
+  }
+
   try {
-    const req = indexedDB.open('keyval-store', 1);
-    req.onsuccess = () => {
+    const request = indexedDB.open('keyval-store', 1);
+    request.onsuccess = () => {
       try {
-        const db = req.result;
-        const tx = db.transaction('keyval', 'readwrite');
-        tx.objectStore('keyval').delete('react-query-cache');
-        tx.oncomplete = () => db.close();
-      } catch (e) { /* ignore */ }
+        const db = request.result;
+        const transaction = db.transaction('keyval', 'readwrite');
+        transaction.objectStore('keyval').delete('react-query-cache');
+        transaction.oncomplete = () => db.close();
+      } catch (error) {}
     };
-  } catch (e) { /* ignore */ }
+  } catch (error) {}
 
-  // Inject the fetch interceptor into the page context
-  const script = document.createElement('script');
-  script.src = browser.runtime.getURL('inject.js');
-  script.onload = () => script.remove();
-  (document.head || document.documentElement).appendChild(script);
+  browser.storage.local.get('settings').then(({ settings }) => {
+    injectScript(`window.__CLAUDE_PROXY_SETTINGS__ = ${JSON.stringify({
+      endpoint: settings?.endpoint || '',
+      model: settings?.model || 'claude-sonnet-4-6',
+      apiKey: settings?.apiKey || '',
+      enableThinking: settings?.enableThinking === true,
+      thinkingBudget: Number.parseInt(settings?.thinkingBudget, 10) || 10000,
+    })};`);
 
-  // Inject CSS for basic upgrade hiding
+    const script = document.createElement('script');
+    script.src = browser.runtime.getURL('inject.js');
+    script.onload = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
+  }).catch(() => {
+    injectScript('window.__CLAUDE_PROXY_SETTINGS__ = { endpoint: "", model: "claude-sonnet-4-6", apiKey: "", enableThinking: false, thinkingBudget: 10000 };');
+    const script = document.createElement('script');
+    script.src = browser.runtime.getURL('inject.js');
+    script.onload = () => script.remove();
+    (document.head || document.documentElement).appendChild(script);
+  });
+
   const style = document.createElement('style');
   style.textContent = `
     a[href="/upgrade"] { display: none !important; }
     [aria-disabled="true"] { pointer-events: auto !important; opacity: 1 !important; }
   `;
   (document.head || document.documentElement).appendChild(style);
-
-  // No DOM text manipulation — the bootstrap API interception in background.js
-  // handles plan spoofing at the network level.
-
-  // Active ports keyed by request ID
-  const activePorts = new Map();
-
-  // Listen for messages from inject.js (page context)
-  window.addEventListener('message', (event) => {
-    if (event.source !== window || !event.data) return;
-
-    // Relay settings from background to inject.js
-    if (event.data.type === 'CLAUDE_INTERCEPT_GET_SETTINGS') {
-      browser.storage.local.get('settings').then(({ settings }) => {
-        window.postMessage({
-          type: 'CLAUDE_INTERCEPT_SETTINGS',
-          syncUrl: settings?.syncUrl || '',
-          syncKey: settings?.syncKey || '',
-          endpoint: settings?.endpoint || '',
-          apiKey: settings?.apiKey || '',
-        }, '*');
-      }).catch(() => {});
-      return;
-    }
-
-    if (event.data.type !== 'CLAUDE_INTERCEPT_REQUEST') return;
-
-    const { id, body, url } = event.data;
-    console.log('[content.js] Relaying request to background, id=' + id);
-
-    const port = browser.runtime.connect({ name: 'intercept' });
-    activePorts.set(id, port);
-
-    port.postMessage({ type: 'REQUEST', id, body, url });
-
-    port.onMessage.addListener((msg) => {
-      window.postMessage(
-        { type: 'CLAUDE_INTERCEPT_' + msg.type, id, data: msg.data, error: msg.error },
-        '*'
-      );
-
-      if (msg.type === 'DONE' || msg.type === 'ERROR' || msg.type === 'PASSTHROUGH') {
-        activePorts.delete(id);
-        port.disconnect();
-      }
-    });
-
-    port.onDisconnect.addListener(() => {
-      if (activePorts.has(id)) {
-        window.postMessage(
-          { type: 'CLAUDE_INTERCEPT_ERROR', id, error: 'Background script disconnected' },
-          '*'
-        );
-        activePorts.delete(id);
-      }
-    });
-  });
-
-  console.log('[content.js] Claude Intercepter: content script loaded');
 })();

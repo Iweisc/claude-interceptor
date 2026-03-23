@@ -2,7 +2,6 @@
   'use strict';
 
   const DEFAULTS = {
-    enabled: true,
     endpoint: '',
     model: 'claude-sonnet-4-6',
     apiKey: '',
@@ -16,7 +15,6 @@
     try {
       const { settings } = await browser.storage.local.get('settings');
       const s = { ...DEFAULTS, ...settings };
-      $('enabled').checked = s.enabled;
       $('endpoint').value = s.endpoint;
       $('model').value = s.model;
       $('apiKey').value = s.apiKey;
@@ -29,12 +27,11 @@
 
   async function save() {
     const settings = {
-      enabled: $('enabled').checked,
       endpoint: $('endpoint').value.replace(/\/+$/, ''),
       model: $('model').value.trim(),
       apiKey: $('apiKey').value.trim(),
       enableThinking: $('enableThinking').checked,
-      thinkingBudget: parseInt($('thinkingBudget').value, 10) || 10000,
+      thinkingBudget: Math.min(Math.max(parseInt($('thinkingBudget').value, 10) || 10000, 0), 126000),
     };
 
     try {
