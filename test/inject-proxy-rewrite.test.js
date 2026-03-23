@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildProxyHeaderValues,
   PROXY_ORIGIN,
   getProxyCookieHeader,
   getProxyUserEmail,
@@ -122,6 +123,24 @@ test('cookie headers can be built and read for proxy forwarding', () => {
 
   setProxyCookieHeaderForTests(cookieHeader);
   assert.equal(getProxyCookieHeader(), cookieHeader);
+});
+
+test('proxy header values include cookie header and resolved user email', () => {
+  setProxyCookieHeaderForTests('a=1; session=abc');
+  setProxyUserEmailForTests('user@example.com');
+
+  assert.deepEqual(
+    buildProxyHeaderValues({
+      endpoint: 'https://litellm.example.com',
+      apiKey: 'secret',
+    }),
+    {
+      cookieHeader: 'a=1; session=abc',
+      userEmail: 'user@example.com',
+      endpoint: 'https://litellm.example.com',
+      apiKey: 'secret',
+    }
+  );
 });
 
 test('content scripts skip page-script injection on login routes', () => {

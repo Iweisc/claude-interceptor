@@ -111,12 +111,22 @@ function isCompletionUrl(url) {
 
 function buildProxyHeaders(existingHeaders, settings) {
   const headers = new Headers(existingHeaders || {});
-  headers.set('X-Forward-Cookie', getProxyCookieHeader() || document.cookie || '');
-  const userEmail = getProxyUserEmail();
+  const headerValues = buildProxyHeaderValues(settings);
+  headers.set('X-Forward-Cookie', headerValues.cookieHeader || document.cookie || '');
+  const userEmail = headerValues.userEmail;
   if (userEmail) headers.set('X-User-Email', userEmail);
-  if (settings.endpoint) headers.set('X-LiteLLM-Endpoint', settings.endpoint);
-  if (settings.apiKey) headers.set('X-LiteLLM-Key', settings.apiKey);
+  if (headerValues.endpoint) headers.set('X-LiteLLM-Endpoint', headerValues.endpoint);
+  if (headerValues.apiKey) headers.set('X-LiteLLM-Key', headerValues.apiKey);
   return headers;
+}
+
+function buildProxyHeaderValues(settings) {
+  return {
+    cookieHeader: getProxyCookieHeader(),
+    userEmail: getProxyUserEmail(),
+    endpoint: settings?.endpoint || '',
+    apiKey: settings?.apiKey || '',
+  };
 }
 
 function setProxyUserEmail(email) {
@@ -284,6 +294,7 @@ async function rewriteFetchRequest(input, init) {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    buildProxyHeaderValues,
     PROXY_ORIGIN,
     getProxyCookieHeader,
     getProxyUserEmail,
@@ -341,11 +352,13 @@ if (typeof module !== 'undefined' && module.exports) {
 
   XHR.prototype.send = function (body) {
     const settings = getProxySettings();
+    const headerValues = buildProxyHeaderValues(settings);
 
     try {
-      this.setRequestHeader('X-Forward-Cookie', document.cookie || '');
-      if (settings.endpoint) this.setRequestHeader('X-LiteLLM-Endpoint', settings.endpoint);
-      if (settings.apiKey) this.setRequestHeader('X-LiteLLM-Key', settings.apiKey);
+      this.setRequestHeader('X-Forward-Cookie', headerValues.cookieHeader || document.cookie || '');
+      if (headerValues.userEmail) this.setRequestHeader('X-User-Email', headerValues.userEmail);
+      if (headerValues.endpoint) this.setRequestHeader('X-LiteLLM-Endpoint', headerValues.endpoint);
+      if (headerValues.apiKey) this.setRequestHeader('X-LiteLLM-Key', headerValues.apiKey);
     } catch (error) {}
 
     let nextBody = body;
