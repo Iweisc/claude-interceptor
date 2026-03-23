@@ -51,11 +51,36 @@ function buildTreeResponse(row) {
   const history = Array.isArray(row?.history) ? row.history : [];
   const chatMessages = [];
   let parentMessageUuid = ROOT_MESSAGE_UUID;
+  let mergedToolResultIntoPrevious = false;
 
   for (let index = 0; index < history.length; index += 1) {
     const entry = history[index] || {};
     const timestamp = entry.created_at || new Date().toISOString();
     const content = normalizeContentBlocks(entry.content, timestamp);
+    const isToolResultOnlyUserEntry = entry.role === 'user'
+      && Array.isArray(entry.content)
+      && entry.content.length > 0
+      && entry.content.every((block) => block && block.type === 'tool_result');
+
+    if (isToolResultOnlyUserEntry && chatMessages.at(-1)?.sender === 'assistant') {
+      const previousMessage = chatMessages[chatMessages.length - 1];
+      previousMessage.content.push(...content);
+      previousMessage.text = buildMessageText(previousMessage.content);
+      previousMessage.updated_at = entry.updated_at || timestamp;
+      mergedToolResultIntoPrevious = true;
+      continue;
+    }
+
+    if (entry.role === 'assistant' && mergedToolResultIntoPrevious && chatMessages.at(-1)?.sender === 'assistant') {
+      const previousMessage = chatMessages[chatMessages.length - 1];
+      previousMessage.content.push(...content);
+      previousMessage.text = buildMessageText(previousMessage.content);
+      previousMessage.updated_at = entry.updated_at || timestamp;
+      previousMessage.stop_reason = entry.stop_reason || previousMessage.stop_reason;
+      mergedToolResultIntoPrevious = false;
+      continue;
+    }
+
     const uuid = entry.uuid || `${row?.id || 'conversation'}-message-${index}`;
     const message = {
       uuid,
@@ -79,6 +104,7 @@ function buildTreeResponse(row) {
 
     chatMessages.push(message);
     parentMessageUuid = uuid;
+    mergedToolResultIntoPrevious = false;
   }
 
   return {

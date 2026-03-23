@@ -15,6 +15,7 @@ const { createConversationRepository } = require('./repositories/conversations')
 const { createMemoryRepository } = require('./repositories/memories');
 const { registerArtifactRoutes } = require('./routes/artifacts');
 const { createSessionIdentityCache } = require('./services/session-identity');
+const { registerCompletionRoutes } = require('./routes/completion');
 const { registerConversationRoutes } = require('./routes/conversations');
 const { registerMemoryRoutes } = require('./routes/memory');
 
@@ -153,6 +154,11 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
   app.use('/artifacts', attachResolvedUser);
 
   registerConversationRoutes(app, appRepositories);
+  registerCompletionRoutes(app, {
+    repositories: appRepositories,
+    services,
+    config: appConfig,
+  });
   registerMemoryRoutes(app, appRepositories);
   registerArtifactRoutes(app, appRepositories);
 
