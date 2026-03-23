@@ -10,6 +10,8 @@ const {
   setProxyUserEmailForTests,
 } = require('../inject.js');
 const chromeInject = require('../chrome/inject.js');
+const firefoxContent = require('../content.js');
+const chromeContent = require('../chrome/content.js');
 
 test('api and artifact routes are rewritten to the proxy origin', () => {
   assert.equal(
@@ -100,4 +102,11 @@ test('proxy settings can be read from injected script data attributes', () => {
 test('resolved user email is available for proxy headers', () => {
   setProxyUserEmailForTests('user@example.com');
   assert.equal(getProxyUserEmail(), 'user@example.com');
+});
+
+test('content scripts skip page-script injection on login routes', () => {
+  assert.equal(firefoxContent.shouldInjectProxyScript('/login'), false);
+  assert.equal(chromeContent.shouldInjectProxyScript('/login'), false);
+  assert.equal(firefoxContent.shouldInjectProxyScript('/new'), true);
+  assert.equal(chromeContent.shouldInjectProxyScript('/chat/example'), true);
 });

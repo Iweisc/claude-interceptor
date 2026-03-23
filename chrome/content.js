@@ -1,6 +1,24 @@
 (function () {
   'use strict';
 
+  function shouldInjectProxyScript(pathname) {
+    return typeof pathname === 'string' && !pathname.startsWith('/login');
+  }
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+      shouldInjectProxyScript,
+    };
+  }
+
+  if (typeof window === 'undefined' || typeof chrome === 'undefined') {
+    return;
+  }
+
+  if (!shouldInjectProxyScript(window.location.pathname)) {
+    return;
+  }
+
   try {
     const request = indexedDB.open('keyval-store', 1);
     request.onsuccess = () => {
@@ -15,13 +33,12 @@
 
   chrome.storage.local.get('settings', async ({ settings }) => {
     let userEmail = '';
-    if (location.pathname !== '/login') {
-      try {
-        const response = await fetch('/api/account', { credentials: 'include' });
-        const body = await response.json();
-        userEmail = body?.email_address || body?.email || '';
-      } catch (error) {}
-    }
+    try {
+      const response = await fetch('/api/account', { credentials: 'include' });
+      const body = await response.json();
+      userEmail = body?.email_address || body?.email || '';
+    } catch (error) {}
+
     const script = document.createElement('script');
     script.dataset.endpoint = settings?.endpoint || '';
     script.dataset.model = settings?.model || 'claude-sonnet-4-6';
