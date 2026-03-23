@@ -7,9 +7,20 @@ function buildCookieHeader(cookies) {
     .join('; ');
 }
 
+function extractAccountEmailFromPayload(payload) {
+  if (typeof payload?.email_address === 'string' && payload.email_address.trim()) {
+    return payload.email_address.trim();
+  }
+  if (typeof payload?.email === 'string' && payload.email.trim()) {
+    return payload.email.trim();
+  }
+  return '';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     buildCookieHeader,
+    extractAccountEmailFromPayload,
   };
 }
 
@@ -20,7 +31,29 @@ if (typeof module !== 'undefined' && module.exports) {
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== 'CLAUDE_PROXY_GET_COOKIE_HEADER') {
-      return false;
+      if (message?.type !== 'CLAUDE_PROXY_GET_SESSION_CONTEXT') {
+        return false;
+      }
+
+      chrome.cookies.getAll({ domain: 'claude.ai' }, async (cookies) => {
+        const cookieHeader = buildCookieHeader(cookies);
+        let userEmail = '';
+        if (cookieHeader) {
+          try {
+            const response = await fetch('https://claude.ai/api/account', {
+              headers: {
+                cookie: cookieHeader,
+                accept: 'application/json',
+              },
+            });
+            if (response.ok) {
+              userEmail = extractAccountEmailFromPayload(await response.json());
+            }
+          } catch (error) {}
+        }
+        sendResponse({ cookieHeader, userEmail });
+      });
+      return true;
     }
 
     chrome.cookies.getAll({ domain: 'claude.ai' }, (cookies) => {

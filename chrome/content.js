@@ -44,24 +44,21 @@
     };
   } catch (error) {}
 
-  async function getCookieHeader() {
+  async function getSessionContext() {
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'CLAUDE_PROXY_GET_COOKIE_HEADER' });
-      return response?.cookieHeader || '';
+      return await chrome.runtime.sendMessage({ type: 'CLAUDE_PROXY_GET_SESSION_CONTEXT' }) || {};
     } catch (error) {
-      return '';
+      return {};
     }
   }
 
   chrome.storage.local.get('settings', async ({ settings }) => {
-    const cookieHeader = await getCookieHeader();
-    let userEmail = '';
-    try {
-      const response = await fetch('/api/account', { credentials: 'include' });
-      const body = await response.json();
-      userEmail = body?.email_address || body?.email || '';
-    } catch (error) {}
-    const dataset = buildInjectedScriptDataset(settings, userEmail, cookieHeader);
+    const sessionContext = await getSessionContext();
+    const dataset = buildInjectedScriptDataset(
+      settings,
+      sessionContext.userEmail || '',
+      sessionContext.cookieHeader || ''
+    );
 
     const script = document.createElement('script');
     Object.assign(script.dataset, dataset);

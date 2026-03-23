@@ -123,6 +123,14 @@ test('cookie headers can be built and read for proxy forwarding', () => {
 
   setProxyCookieHeaderForTests(cookieHeader);
   assert.equal(getProxyCookieHeader(), cookieHeader);
+  assert.equal(
+    firefoxBackground.extractAccountEmailFromPayload({ email_address: 'user@example.com' }),
+    'user@example.com'
+  );
+  assert.equal(
+    chromeBackground.extractAccountEmailFromPayload({ email: 'user@example.com' }),
+    'user@example.com'
+  );
 });
 
 test('proxy header values include cookie header and resolved user email', () => {
