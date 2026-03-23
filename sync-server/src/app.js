@@ -13,6 +13,7 @@ const {
 } = require('./services/claude-upstream');
 const { createConversationRepository } = require('./repositories/conversations');
 const { createMemoryRepository } = require('./repositories/memories');
+const { registerArtifactRoutes } = require('./routes/artifacts');
 const { createSessionIdentityCache } = require('./services/session-identity');
 const { registerConversationRoutes } = require('./routes/conversations');
 const { registerMemoryRoutes } = require('./routes/memory');
@@ -111,7 +112,7 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
     await handlePatchedJsonProxy(req, res, patchBootstrapPayload);
   });
 
-  app.use('/api/organizations/:orgId', async (req, res, next) => {
+  async function attachResolvedUser(req, res, next) {
     try {
       const cookieHeader = typeof req.headers['x-forward-cookie'] === 'string'
         ? req.headers['x-forward-cookie']
@@ -145,10 +146,15 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
     } catch (error) {
       res.status(502).json({ error: 'Unable to resolve user session' });
     }
-  });
+  }
+
+  app.use('/api/organizations/:orgId', attachResolvedUser);
+  app.use('/wiggle', attachResolvedUser);
+  app.use('/artifacts', attachResolvedUser);
 
   registerConversationRoutes(app, appRepositories);
   registerMemoryRoutes(app, appRepositories);
+  registerArtifactRoutes(app, appRepositories);
 
   return app;
 }

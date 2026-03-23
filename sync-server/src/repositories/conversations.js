@@ -204,6 +204,21 @@ function createConversationRepository(pool) {
       if (!row) return null;
       return row.artifacts[path] || null;
     },
+    async findArtifactByPath(context, path, options = {}) {
+      const queryable = getQueryable(pool, options);
+      const { rows } = await queryable.query(
+        `SELECT artifacts
+         FROM conversations
+         WHERE user_id = $1
+           AND ($2 = '' OR org_id = $2)
+           AND artifacts ? $3
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [context.userId, context.orgId || '', path]
+      );
+      if (rows.length === 0) return null;
+      return rows[0].artifacts?.[path] || null;
+    },
     async upsertArtifact(context, path, artifact, options) {
       return updateConversation(pool, context, (row) => ({
         ...row,
