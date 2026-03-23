@@ -13,6 +13,8 @@ spec:
       labels:
         app: claude-proxy
     spec:
+      imagePullSecrets:
+        - name: dockerhub-pull-secret
       securityContext:
         fsGroup: 1000
         seccompProfile:

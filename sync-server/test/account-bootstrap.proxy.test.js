@@ -109,6 +109,7 @@ test('account proxy route patches the upstream response and caches the email', a
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('access-control-allow-origin'), 'https://claude.ai');
+    assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
 
     const body = await response.json();
     assert.equal(body.memberships[0].organization.billing_type, 'stripe');
@@ -116,6 +117,59 @@ test('account proxy route patches the upstream response and caches the email', a
     assert.equal(sessionIdentityCache.get('sessionKey=abc123'), 'user@example.com');
     assert.equal(String(requests[0].url), 'https://claude.ai/api/account');
     assert.equal(requests[0].options.headers.cookie, 'sessionKey=abc123');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('unowned api routes pass through to claude with cookies and body intact', async () => {
+  const requests = [];
+  const app = createApp({
+    config: {
+      corsOrigin: 'https://claude.ai',
+      claudeUpstreamBaseUrl: 'https://claude.ai',
+      requestTimeoutMs: 5_000,
+      sessionCacheTtlMs: 60_000,
+    },
+    services: {
+      fetchImpl: async (url, options) => {
+        requests.push({ url, options });
+        return new Response(JSON.stringify({ ok: true, route: 'verify_google' }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+          },
+        });
+      },
+    },
+  });
+
+  const server = app.listen(0);
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/auth/verify_google`, {
+      method: 'POST',
+      headers: {
+        origin: 'https://claude.ai',
+        'content-type': 'application/json',
+        'x-forward-cookie': 'sessionKey=abc123',
+      },
+      body: JSON.stringify({ token: 'google-token' }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://claude.ai');
+    assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
+    assert.deepEqual(await response.json(), { ok: true, route: 'verify_google' });
+    assert.equal(String(requests[0].url), 'https://claude.ai/api/auth/verify_google');
+    assert.equal(requests[0].options.method, 'POST');
+    assert.equal(requests[0].options.headers.cookie, 'sessionKey=abc123');
+    assert.equal(requests[0].options.headers['content-type'], 'application/json');
+    assert.equal(
+      Buffer.from(requests[0].options.body).toString('utf8'),
+      JSON.stringify({ token: 'google-token' })
+    );
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

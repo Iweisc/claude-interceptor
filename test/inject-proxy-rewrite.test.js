@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   PROXY_ORIGIN,
   mergeCompletionBodyWithSettings,
+  readProxySettingsFromDataAttributes,
   rewriteClaudeUrl,
 } = require('../inject.js');
 const chromeInject = require('../chrome/inject.js');
@@ -20,6 +21,21 @@ test('api and artifact routes are rewritten to the proxy origin', () => {
   assert.equal(
     rewriteClaudeUrl('https://claude.ai/api/account'),
     `${PROXY_ORIGIN}/api/account`
+  );
+});
+
+test('auth and logged-out login bootstrap requests stay on claude.ai', () => {
+  assert.equal(
+    rewriteClaudeUrl('/api/auth/verify_google', { pagePath: '/login' }),
+    '/api/auth/verify_google'
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/bootstrap/abc/app_start?growthbook_format=sdk', { pagePath: '/login' }),
+    '/api/bootstrap/abc/app_start?growthbook_format=sdk'
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/account', { pagePath: '/login' }),
+    '/api/account'
   );
 });
 
@@ -51,5 +67,30 @@ test('chrome and firefox injectors share identical rewrite behavior', () => {
       enableThinking: true,
       thinkingBudget: 10000,
     })
+  );
+});
+
+test('proxy settings can be read from injected script data attributes', () => {
+  const dataset = {
+    endpoint: 'https://litellm.example.com',
+    model: 'claude-sonnet-4-6',
+    apiKey: 'secret',
+    enableThinking: 'true',
+    thinkingBudget: '12000',
+  };
+
+  assert.deepEqual(
+    readProxySettingsFromDataAttributes(dataset),
+    {
+      endpoint: 'https://litellm.example.com',
+      model: 'claude-sonnet-4-6',
+      apiKey: 'secret',
+      enableThinking: true,
+      thinkingBudget: 12000,
+    }
+  );
+  assert.deepEqual(
+    chromeInject.readProxySettingsFromDataAttributes(dataset),
+    readProxySettingsFromDataAttributes(dataset)
   );
 });

@@ -1,13 +1,6 @@
 (function () {
   'use strict';
 
-  function injectScript(textContent) {
-    const script = document.createElement('script');
-    script.textContent = textContent;
-    (document.head || document.documentElement).appendChild(script);
-    script.remove();
-  }
-
   try {
     const request = indexedDB.open('keyval-store', 1);
     request.onsuccess = () => {
@@ -21,15 +14,12 @@
   } catch (error) {}
 
   chrome.storage.local.get('settings', ({ settings }) => {
-    injectScript(`window.__CLAUDE_PROXY_SETTINGS__ = ${JSON.stringify({
-      endpoint: settings?.endpoint || '',
-      model: settings?.model || 'claude-sonnet-4-6',
-      apiKey: settings?.apiKey || '',
-      enableThinking: settings?.enableThinking === true,
-      thinkingBudget: Number.parseInt(settings?.thinkingBudget, 10) || 10000,
-    })};`);
-
     const script = document.createElement('script');
+    script.dataset.endpoint = settings?.endpoint || '';
+    script.dataset.model = settings?.model || 'claude-sonnet-4-6';
+    script.dataset.apiKey = settings?.apiKey || '';
+    script.dataset.enableThinking = String(settings?.enableThinking === true);
+    script.dataset.thinkingBudget = String(Number.parseInt(settings?.thinkingBudget, 10) || 10000);
     script.src = chrome.runtime.getURL('inject.js');
     script.onload = () => script.remove();
     (document.head || document.documentElement).appendChild(script);

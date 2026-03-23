@@ -3,14 +3,60 @@
 const PROXY_ORIGIN = 'https://proxy-ns-0ffzk4u2.usw-1.sealos.app';
 const SETTINGS_KEY = '__CLAUDE_PROXY_SETTINGS__';
 const COMPLETION_RE = /\/api\/organizations\/[^/]+\/chat_conversations\/[^/]+\/(completion|retry_completion)$/;
+const BOOTSTRAP_RE = /^\/api\/bootstrap\/[^/]+\/app_start$/;
 const ARTIFACT_TOOLS_RE = /^\/artifacts\/wiggle_artifact\/[^/]+\/tools/;
+const DEFAULT_PROXY_SETTINGS = Object.freeze({
+  endpoint: '',
+  model: 'claude-sonnet-4-6',
+  apiKey: '',
+  enableThinking: false,
+  thinkingBudget: 10000,
+});
 
-function rewriteClaudeUrl(inputUrl) {
+function readProxySettingsFromDataAttributes(dataset) {
+  if (!dataset || typeof dataset !== 'object') {
+    return { ...DEFAULT_PROXY_SETTINGS };
+  }
+
+  const thinkingBudget = Number.parseInt(dataset.thinkingBudget, 10);
+  return {
+    endpoint: typeof dataset.endpoint === 'string' ? dataset.endpoint : '',
+    model: typeof dataset.model === 'string' && dataset.model ? dataset.model : DEFAULT_PROXY_SETTINGS.model,
+    apiKey: typeof dataset.apiKey === 'string' ? dataset.apiKey : '',
+    enableThinking: dataset.enableThinking === 'true',
+    thinkingBudget: Number.isFinite(thinkingBudget) ? thinkingBudget : DEFAULT_PROXY_SETTINGS.thinkingBudget,
+  };
+}
+
+const INITIAL_PROXY_SETTINGS = typeof document !== 'undefined'
+  ? readProxySettingsFromDataAttributes(document.currentScript?.dataset)
+  : { ...DEFAULT_PROXY_SETTINGS };
+
+function shouldBypassProxy(pathname, pagePath) {
+  if (pathname.startsWith('/api/auth/')) {
+    return true;
+  }
+
+  if (pagePath === '/login' || pagePath.startsWith('/login/')) {
+    return pathname === '/api/account' || BOOTSTRAP_RE.test(pathname);
+  }
+
+  return false;
+}
+
+function rewriteClaudeUrl(inputUrl, options = {}) {
   const url = String(inputUrl || '');
+  const pagePath = typeof options.pagePath === 'string'
+    ? options.pagePath
+    : (typeof window !== 'undefined' && window.location ? window.location.pathname : '');
   const prefixes = [
     ['https://claude.ai', 'https://claude.ai'],
     ['http://claude.ai', 'http://claude.ai'],
   ];
+  const parsed = new URL(url, 'https://claude.ai');
+  if (shouldBypassProxy(parsed.pathname, pagePath)) {
+    return url;
+  }
 
   if (url.startsWith('/api/') || url.startsWith('/wiggle/download-file') || ARTIFACT_TOOLS_RE.test(url)) {
     return `${PROXY_ORIGIN}${url}`;
@@ -41,7 +87,10 @@ function mergeCompletionBodyWithSettings(body, settings) {
 
 function getProxySettings() {
   if (typeof window === 'undefined') return {};
-  return window[SETTINGS_KEY] && typeof window[SETTINGS_KEY] === 'object' ? window[SETTINGS_KEY] : {};
+  if (window[SETTINGS_KEY] && typeof window[SETTINGS_KEY] === 'object') {
+    return window[SETTINGS_KEY];
+  }
+  return INITIAL_PROXY_SETTINGS;
 }
 
 function isCompletionUrl(url) {
@@ -110,12 +159,15 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     PROXY_ORIGIN,
     mergeCompletionBodyWithSettings,
+    readProxySettingsFromDataAttributes,
     rewriteClaudeUrl,
   };
 }
 
 (function () {
   if (typeof window === 'undefined') return;
+
+  window[SETTINGS_KEY] = getProxySettings();
 
   try {
     for (let index = localStorage.length - 1; index >= 0; index -= 1) {

@@ -1,5 +1,18 @@
 'use strict';
 
+const HOP_BY_HOP_HEADERS = new Set([
+  'connection',
+  'content-length',
+  'host',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);
+
 function clonePayload(payload) {
   return payload && typeof payload === 'object' ? structuredClone(payload) : {};
 }
@@ -193,6 +206,23 @@ function buildUpstreamHeaders(requestHeaders, cookieHeader) {
   return headers;
 }
 
+function buildPassthroughHeaders(requestHeaders, cookieHeader) {
+  const headers = {};
+
+  for (const [name, value] of Object.entries(requestHeaders || {})) {
+    const lower = name.toLowerCase();
+    if (!value || HOP_BY_HOP_HEADERS.has(lower)) continue;
+    if (lower === 'x-forward-cookie' || lower === 'x-litellm-endpoint' || lower === 'x-litellm-key') continue;
+    headers[lower] = Array.isArray(value) ? value.join(', ') : value;
+  }
+
+  if (cookieHeader) {
+    headers.cookie = cookieHeader;
+  }
+
+  return headers;
+}
+
 async function fetchUpstreamJson({ fetchImpl, url, headers, timeoutMs }) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -222,10 +252,33 @@ async function fetchUpstreamJson({ fetchImpl, url, headers, timeoutMs }) {
   }
 }
 
+async function proxyUpstreamRequest({ fetchImpl, url, method, headers, body, timeoutMs }) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetchImpl(url, {
+      method,
+      headers,
+      body,
+      signal: controller.signal,
+    });
+
+    return {
+      response,
+      body: Buffer.from(await response.arrayBuffer()),
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 module.exports = {
+  buildPassthroughHeaders,
   buildUpstreamHeaders,
   extractAccountEmail,
   fetchUpstreamJson,
   patchAccountPayload,
   patchBootstrapPayload,
+  proxyUpstreamRequest,
 };

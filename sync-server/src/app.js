@@ -5,11 +5,13 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const {
+  buildPassthroughHeaders,
   buildUpstreamHeaders,
   extractAccountEmail,
   fetchUpstreamJson,
   patchAccountPayload,
   patchBootstrapPayload,
+  proxyUpstreamRequest,
 } = require('./services/claude-upstream');
 const { createConversationRepository } = require('./repositories/conversations');
 const { createMemoryRepository } = require('./repositories/memories');
@@ -46,12 +48,21 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
     standardHeaders: true,
     legacyHeaders: false,
   }));
-  app.use(express.json({ limit: '10mb' }));
+  const captureRawBody = (req, _res, buffer) => {
+    if (buffer && buffer.length > 0) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  };
+  app.use(express.json({ limit: '10mb', verify: captureRawBody }));
+  app.use(express.urlencoded({ extended: false, limit: '10mb', verify: captureRawBody }));
+  app.use(express.text({ type: 'text/*', limit: '10mb', verify: captureRawBody }));
   app.use((req, res, next) => {
     const origin = req.headers.origin || '';
 
     if (origin === appConfig.corsOrigin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Vary', 'Origin');
     }
 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -161,6 +172,40 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
   });
   registerMemoryRoutes(app, appRepositories);
   registerArtifactRoutes(app, appRepositories);
+
+  app.use('/api', async (req, res) => {
+    try {
+      const cookieHeader = typeof req.headers['x-forward-cookie'] === 'string'
+        ? req.headers['x-forward-cookie']
+        : '';
+      const upstreamUrl = new URL(req.originalUrl, appConfig.claudeUpstreamBaseUrl);
+      const body = req.rawBody && req.rawBody.length > 0
+        ? req.rawBody
+        : undefined;
+      const upstream = await proxyUpstreamRequest({
+        fetchImpl,
+        url: upstreamUrl,
+        method: req.method,
+        headers: buildPassthroughHeaders(req.headers, cookieHeader),
+        body,
+        timeoutMs: appConfig.requestTimeoutMs,
+      });
+
+      res.status(upstream.response.status);
+      const contentType = upstream.response.headers.get('content-type');
+      if (contentType) {
+        res.setHeader('Content-Type', contentType);
+      }
+      const location = upstream.response.headers.get('location');
+      if (location) {
+        res.setHeader('Location', location);
+      }
+      res.send(upstream.body);
+    } catch (error) {
+      const status = error?.name === 'AbortError' ? 504 : 502;
+      res.status(status).json({ error: 'Upstream request failed' });
+    }
+  });
 
   return app;
 }
