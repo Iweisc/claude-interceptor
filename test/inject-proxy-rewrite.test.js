@@ -130,3 +130,31 @@ test('content scripts skip page-script injection on login routes', () => {
   assert.equal(firefoxContent.shouldInjectProxyScript('/new'), true);
   assert.equal(chromeContent.shouldInjectProxyScript('/chat/example'), true);
 });
+
+test('content scripts build injected dataset with both cookie header and user email', () => {
+  const settings = {
+    endpoint: 'https://litellm.example.com',
+    model: 'claude-sonnet-4-6',
+    apiKey: 'secret',
+    enableThinking: true,
+    thinkingBudget: 12000,
+  };
+  const expected = {
+    endpoint: 'https://litellm.example.com',
+    model: 'claude-sonnet-4-6',
+    apiKey: 'secret',
+    enableThinking: 'true',
+    thinkingBudget: '12000',
+    cookieHeader: 'a=1; session=abc',
+    userEmail: 'user@example.com',
+  };
+
+  assert.deepEqual(
+    firefoxContent.buildInjectedScriptDataset(settings, 'user@example.com', 'a=1; session=abc'),
+    expected
+  );
+  assert.deepEqual(
+    chromeContent.buildInjectedScriptDataset(settings, 'user@example.com', 'a=1; session=abc'),
+    expected
+  );
+});

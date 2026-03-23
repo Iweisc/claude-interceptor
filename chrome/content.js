@@ -5,8 +5,21 @@
     return typeof pathname === 'string' && !pathname.startsWith('/login');
   }
 
+  function buildInjectedScriptDataset(settings, userEmail, cookieHeader) {
+    return {
+      endpoint: settings?.endpoint || '',
+      model: settings?.model || 'claude-sonnet-4-6',
+      apiKey: settings?.apiKey || '',
+      enableThinking: String(settings?.enableThinking === true),
+      thinkingBudget: String(Number.parseInt(settings?.thinkingBudget, 10) || 10000),
+      cookieHeader: typeof cookieHeader === 'string' ? cookieHeader : '',
+      userEmail: typeof userEmail === 'string' ? userEmail : '',
+    };
+  }
+
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+      buildInjectedScriptDataset,
       shouldInjectProxyScript,
     };
   }
@@ -42,14 +55,16 @@
 
   chrome.storage.local.get('settings', async ({ settings }) => {
     const cookieHeader = await getCookieHeader();
+    let userEmail = '';
+    try {
+      const response = await fetch('/api/account', { credentials: 'include' });
+      const body = await response.json();
+      userEmail = body?.email_address || body?.email || '';
+    } catch (error) {}
+    const dataset = buildInjectedScriptDataset(settings, userEmail, cookieHeader);
 
     const script = document.createElement('script');
-    script.dataset.endpoint = settings?.endpoint || '';
-    script.dataset.model = settings?.model || 'claude-sonnet-4-6';
-    script.dataset.apiKey = settings?.apiKey || '';
-    script.dataset.enableThinking = String(settings?.enableThinking === true);
-    script.dataset.thinkingBudget = String(Number.parseInt(settings?.thinkingBudget, 10) || 10000);
-    script.dataset.cookieHeader = cookieHeader;
+    Object.assign(script.dataset, dataset);
     script.src = chrome.runtime.getURL('inject.js');
     script.onload = () => script.remove();
     (document.head || document.documentElement).appendChild(script);
