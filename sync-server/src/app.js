@@ -58,15 +58,21 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
   app.use(express.text({ type: 'text/*', limit: '10mb', verify: captureRawBody }));
   app.use((req, res, next) => {
     const origin = req.headers.origin || '';
+    const requestedHeaders = typeof req.headers['access-control-request-headers'] === 'string'
+      ? req.headers['access-control-request-headers']
+      : '';
 
     if (origin === appConfig.corsOrigin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
-      res.setHeader('Vary', 'Origin');
+      res.setHeader('Vary', 'Origin, Access-Control-Request-Headers');
     }
 
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Forward-Cookie, X-LiteLLM-Endpoint, X-LiteLLM-Key');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      requestedHeaders || 'Content-Type, Authorization, X-Forward-Cookie, X-LiteLLM-Endpoint, X-LiteLLM-Key'
+    );
     res.setHeader('Access-Control-Max-Age', '86400');
 
     if (req.method === 'OPTIONS') {

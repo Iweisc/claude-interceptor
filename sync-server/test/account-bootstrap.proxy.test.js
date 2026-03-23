@@ -174,3 +174,38 @@ test('unowned api routes pass through to claude with cookies and body intact', a
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('cors preflight reflects requested headers for claude frontend requests', async () => {
+  const app = createApp({
+    config: {
+      corsOrigin: 'https://claude.ai',
+      claudeUpstreamBaseUrl: 'https://claude.ai',
+      requestTimeoutMs: 5_000,
+      sessionCacheTtlMs: 60_000,
+    },
+  });
+
+  const server = app.listen(0);
+
+  try {
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const response = await fetch(`${baseUrl}/api/organizations/org-1/chat_conversations`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://claude.ai',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'anthropic-anonymous-id,content-type,x-forward-cookie',
+      },
+    });
+
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://claude.ai');
+    assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
+    assert.equal(
+      response.headers.get('access-control-allow-headers'),
+      'anthropic-anonymous-id,content-type,x-forward-cookie'
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
