@@ -25,12 +25,55 @@ test('api and artifact routes are rewritten to the proxy origin', () => {
     `${PROXY_ORIGIN}/api/organizations/org-1/chat_conversations`
   );
   assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/chat_conversations/conv-1?tree=True'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/chat_conversations/conv-1?tree=True`
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/chat_conversations/conv-1/completion'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/chat_conversations/conv-1/completion`
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/chat_conversations/conv-1/title'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/chat_conversations/conv-1/title`
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/memory'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/memory`
+  );
+  assert.equal(
     rewriteClaudeUrl('/wiggle/download-file?path=%2Fmnt%2Fuser-data%2Foutputs%2Fdemo.js'),
     `${PROXY_ORIGIN}/wiggle/download-file?path=%2Fmnt%2Fuser-data%2Foutputs%2Fdemo.js`
   );
   assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/subscription_details'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/subscription_details`
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/artifacts/conv-1/versions?source=w'),
+    `${PROXY_ORIGIN}/api/organizations/org-1/artifacts/conv-1/versions?source=w`
+  );
+  assert.equal(
     rewriteClaudeUrl('https://claude.ai/api/organizations/org-1/chat_conversations'),
     `${PROXY_ORIGIN}/api/organizations/org-1/chat_conversations`
+  );
+});
+
+test('unowned org routes stay on claude ai', () => {
+  assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/chat_conversations_v2?limit=30'),
+    '/api/organizations/org-1/chat_conversations_v2?limit=30'
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/cowork_settings'),
+    '/api/organizations/org-1/cowork_settings'
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/organizations/org-1/list_styles'),
+    '/api/organizations/org-1/list_styles'
+  );
+  assert.equal(
+    rewriteClaudeUrl('/api/event_logging/batch'),
+    '/api/event_logging/batch'
   );
 });
 
@@ -49,16 +92,33 @@ test('auth and logged-out login bootstrap requests stay on claude.ai', () => {
   );
 });
 
-test('stored popup settings overlay model and thinking on completion bodies', () => {
+test('stored popup settings overlay model and thinking budget on completion bodies', () => {
   const body = mergeCompletionBodyWithSettings({ prompt: 'hi' }, {
     model: 'claude-sonnet-4-6',
-    enableThinking: true,
     thinkingBudget: 10000,
   });
 
   assert.equal(body.model, 'claude-sonnet-4-6');
-  assert.equal(body._thinkingEnabled, true);
   assert.equal(body._thinkingBudget, 10000);
+});
+
+test('frontend-selected models are preserved when present on completion bodies', () => {
+  const body = mergeCompletionBodyWithSettings({ prompt: 'hi', model: 'claude-opus-4-6' }, {
+    model: 'claude-sonnet-4-6',
+    thinkingBudget: 10000,
+  });
+
+  assert.equal(body.model, 'claude-opus-4-6');
+  assert.equal(body._thinkingBudget, 10000);
+});
+
+test('paprika_mode from request body enables thinking on the server', () => {
+  const body = mergeCompletionBodyWithSettings({ prompt: 'hi', paprika_mode: 'extended' }, {
+    model: 'claude-sonnet-4-6',
+  });
+
+  assert.equal(body.paprika_mode, 'extended');
+  assert.equal(body._thinkingEnabled, undefined);
 });
 
 test('chrome and firefox injectors share identical rewrite behavior', () => {
@@ -156,6 +216,23 @@ test('content scripts skip page-script injection on login routes', () => {
   assert.equal(chromeContent.shouldInjectProxyScript('/login'), false);
   assert.equal(firefoxContent.shouldInjectProxyScript('/new'), true);
   assert.equal(chromeContent.shouldInjectProxyScript('/chat/example'), true);
+});
+
+test('content scripts read page nonces and apply them to injected scripts', () => {
+  const pageDocument = {
+    querySelector(selector) {
+      assert.equal(selector, 'script[nonce]');
+      return { nonce: 'page-csp-nonce' };
+    },
+  };
+  const script = { dataset: {} };
+
+  assert.equal(firefoxContent.getPageScriptNonce(pageDocument), 'page-csp-nonce');
+  assert.equal(chromeContent.getPageScriptNonce(pageDocument), 'page-csp-nonce');
+
+  firefoxContent.applyInjectedScriptAttributes(script, { model: 'claude-sonnet-4-6' }, 'page-csp-nonce');
+  assert.deepEqual(script.dataset, { model: 'claude-sonnet-4-6' });
+  assert.equal(script.nonce, 'page-csp-nonce');
 });
 
 test('content scripts build injected dataset with both cookie header and user email', () => {

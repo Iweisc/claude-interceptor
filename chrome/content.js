@@ -17,9 +17,26 @@
     };
   }
 
+  function getPageScriptNonce(doc) {
+    if (!doc?.querySelector) {
+      return '';
+    }
+    const existingScript = doc.querySelector('script[nonce]');
+    return typeof existingScript?.nonce === 'string' ? existingScript.nonce : '';
+  }
+
+  function applyInjectedScriptAttributes(script, dataset, nonce) {
+    Object.assign(script.dataset, dataset);
+    if (typeof nonce === 'string' && nonce) {
+      script.nonce = nonce;
+    }
+  }
+
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
+      applyInjectedScriptAttributes,
       buildInjectedScriptDataset,
+      getPageScriptNonce,
       shouldInjectProxyScript,
     };
   }
@@ -32,17 +49,12 @@
     return;
   }
 
-  try {
-    const request = indexedDB.open('keyval-store', 1);
-    request.onsuccess = () => {
-      try {
-        const db = request.result;
-        const transaction = db.transaction('keyval', 'readwrite');
-        transaction.objectStore('keyval').delete('react-query-cache');
-        transaction.oncomplete = () => db.close();
-      } catch (error) {}
-    };
-  } catch (error) {}
+  // early-inject.js (MAIN world, document_start) handles IDB cache override and localStorage clearing.
+  // No inline script needed here — Chrome CSP blocks it anyway.
+
+  const style = document.createElement('style');
+  style.textContent = 'a[href="/upgrade"] { display: none !important; } [data-testid="upgrade-badge"] { display: none !important; }';
+  (document.head || document.documentElement).appendChild(style);
 
   async function getSessionContext() {
     try {
@@ -61,7 +73,7 @@
     );
 
     const script = document.createElement('script');
-    Object.assign(script.dataset, dataset);
+    applyInjectedScriptAttributes(script, dataset, getPageScriptNonce(document));
     script.src = chrome.runtime.getURL('inject.js');
     script.onload = () => script.remove();
     (document.head || document.documentElement).appendChild(script);

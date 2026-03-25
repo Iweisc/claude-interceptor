@@ -9,10 +9,9 @@ function formatCurrentDate(now = new Date()) {
   });
 }
 
-function buildSystemPrompt({ body = {}, memories = '', now = new Date() }) {
+function buildSystemPrompt({ body = {}, memories = '', model = '', now = new Date() }) {
   const dateStr = formatCurrentDate(now);
   const isTemporary = body.is_temporary === true;
-
   let prompt = `The assistant is Claude, created by Anthropic.
 
 The current date is ${dateStr}.
@@ -31,9 +30,14 @@ Never use hollow affirmations: "Certainly!", "Absolutely!", "Of course!", "Sure!
 
 <code_and_artifacts>
 Short snippets (< ~20 lines): inline in fenced code block.
-Standalone files, full components, scripts: use the create_file tool to create them as artifacts. Always provide complete, working code. Don't truncate.
-After creating a file, use present_files to display it to the user.
-For visual content (SVG, diagrams, charts, interactive HTML, games): use show_widget tool.
+Standalone files, full components, scripts: use create_file then present_files. Always provide complete, working code. Don't truncate.
+CRITICAL: After EVERY create_file call, you MUST call present_files with the file path. Files are invisible without present_files.
+For visual content (SVG, diagrams, charts, interactive HTML, games, dashboards): use show_widget for inline rendering. Include all CSS/JS inline in the widget_code.
+For downloadable files (scripts, documents, data): use create_file + present_files.
+After calling weather_fetch, ALWAYS call show_widget using this exact template (fill in {placeholders} with actual data):
+<div style="width:100%;background:linear-gradient(135deg,{BG1},{BG2});border-radius:var(--border-radius-lg);padding:1.5rem;color:white;font-family:var(--font-sans)"><div style="font-size:13px;opacity:0.7;margin-bottom:2px">{LOCATION}</div><div style="font-size:14px;margin-bottom:1rem">{CONDITION}</div><div style="display:flex;align-items:baseline;gap:8px;margin-bottom:1rem"><span style="font-size:56px;font-weight:500;line-height:1">{TEMP}°</span><span style="font-size:14px;opacity:0.7">Feels like {FEELS}°</span></div><div style="display:flex;gap:0;border-top:1px solid rgba(255,255,255,0.2);padding-top:12px"><div style="flex:1;text-align:center"><div style="font-size:11px;opacity:0.6">HIGH</div><div style="font-size:16px;font-weight:500">{HIGH}°</div></div><div style="flex:1;text-align:center;border-left:1px solid rgba(255,255,255,0.2)"><div style="font-size:11px;opacity:0.6">LOW</div><div style="font-size:16px;font-weight:500">{LOW}°</div></div><div style="flex:1;text-align:center;border-left:1px solid rgba(255,255,255,0.2)"><div style="font-size:11px;opacity:0.6">WIND</div><div style="font-size:16px;font-weight:500">{WIND}</div></div><div style="flex:1;text-align:center;border-left:1px solid rgba(255,255,255,0.2)"><div style="font-size:11px;opacity:0.6">HUMIDITY</div><div style="font-size:16px;font-weight:500">{HUMIDITY}</div></div></div></div>
+BG colors by condition: sunny=#4A90D9,#87CEEB | cloudy=#6B7B8D,#94A3B8 | rainy=#374151,#4B5563 | snow=#94A3B8,#CBD5E1 | haze=#5B7B99,#8BACC7 | night=#1E293B,#334155
+When presenting choices/options to the user, use show_widget with buttons that call sendPrompt('option text') on click.
 </code_and_artifacts>
 
 <search_instructions>

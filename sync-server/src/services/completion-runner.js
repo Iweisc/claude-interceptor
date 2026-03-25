@@ -352,10 +352,11 @@ async function defaultStreamConversation({ req, res, context, repositories, serv
   const systemPrompt = body.system_prompt || buildSystemPrompt({ body, memories });
   const tools = buildToolDefinitions({ isTemporary });
   const modelToUse = body.model || settings.model || 'claude-sonnet-4-6';
-  const conversationThinkingEnabled = settings.paprika_mode === 'extended' || settings.paprikaMode === 'extended';
-  const thinkingEnabled = body._thinkingEnabled !== undefined
-    ? body._thinkingEnabled === true
-    : (conversationThinkingEnabled || Boolean(settings.enableThinking));
+  const thinkingEnabled = body.paprika_mode === 'extended'
+    || settings.paprika_mode === 'extended'
+    || settings.paprikaMode === 'extended'
+    || body._thinkingEnabled === true
+    || Boolean(settings.enableThinking);
   const budgetTokens = thinkingEnabled
     ? Math.min(Number.parseInt(body._thinkingBudget, 10) || settings.thinkingBudget || 10000, 126000)
     : 0;
@@ -498,6 +499,16 @@ async function runCompletion({ req, res, context, repositories, services = {}, c
       } else {
         await repositories.conversations.appendUserTurn(context, turn);
       }
+    }
+
+    const settingsUpdate = {};
+    const ccp = requestBody.create_conversation_params || {};
+    if (requestBody.model || ccp.model) settingsUpdate.model = requestBody.model || ccp.model;
+    if (requestBody.paprika_mode || ccp.paprika_mode) settingsUpdate.paprika_mode = requestBody.paprika_mode || ccp.paprika_mode;
+    if (Object.keys(settingsUpdate).length > 0) {
+      try {
+        await repositories.conversations.updateConversationSettings(context, settingsUpdate);
+      } catch (error) { /* ignore */ }
     }
 
     if (!res.writableEnded) {

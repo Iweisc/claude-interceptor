@@ -8,7 +8,12 @@ function isPlainObject(value) {
 
 function normalizeContentBlocks(content, timestamp) {
   if (Array.isArray(content)) {
-    return content;
+    return content.map((block) => {
+      if (block && block.type === 'tool_use' && block.name === 'show_widget') {
+        return { ...block, name: 'visualize:show_widget', integration_name: 'visualize', is_mcp_app: true };
+      }
+      return block;
+    });
   }
 
   if (typeof content === 'string') {
@@ -42,8 +47,11 @@ function buildConversationMetadataResponse(row) {
   return {
     uuid: row?.id || '',
     name: row?.title || '',
+    model: settings.model || '',
     settings,
     is_temporary: settings.is_temporary === true || settings.isTemporary === true,
+    is_starred: false,
+    project_uuid: null,
   };
 }
 

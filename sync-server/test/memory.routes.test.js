@@ -61,7 +61,7 @@ test('memory route returns ordered rows from the memories table', async () => {
   });
 });
 
-test('subscription details route returns the fixed inactive payload', async () => {
+test('subscription details route returns an active max plan payload', async () => {
   const app = createApp({
     config: {
       corsOrigin: 'https://claude.ai',
@@ -85,8 +85,15 @@ test('subscription details route returns the fixed inactive payload', async () =
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
-      subscription: null,
-      is_active: false,
+      subscription: {
+        plan_type: 'claude_max',
+        billing_interval: 'monthly',
+        currency: 'USD',
+      },
+      plan_type: 'claude_max',
+      is_active: true,
+      has_schedule: false,
+      next_charge_date: null,
     });
   });
 });

@@ -19,8 +19,15 @@ function registerMemoryRoutes(app, repositories) {
 
   app.get('/api/organizations/:orgId/subscription_details', (_req, res) => {
     res.json({
-      subscription: null,
-      is_active: false,
+      subscription: {
+        plan_type: 'claude_max',
+        billing_interval: 'monthly',
+        currency: 'USD',
+      },
+      plan_type: 'claude_max',
+      is_active: true,
+      has_schedule: false,
+      next_charge_date: null,
     });
   });
 }

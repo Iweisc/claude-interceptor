@@ -51,13 +51,21 @@ function augmentClaudeEvent(data, requestContext, blockIndexOffset) {
             parsed.content_block.citations = parsed.content_block.citations || [];
           }
           if (parsed.content_block.type === 'tool_use') {
-            parsed.content_block.message = parsed.content_block.message || 'Working...';
-            parsed.content_block.integration_name = null;
+            const isVisualize = parsed.content_block.name === 'show_widget';
+            if (isVisualize) {
+              parsed.content_block.name = 'visualize:show_widget';
+              parsed.content_block.message = 'show_widget';
+              parsed.content_block.integration_name = 'visualize';
+              parsed.content_block.is_mcp_app = true;
+            } else {
+              parsed.content_block.message = parsed.content_block.message || 'Working...';
+              parsed.content_block.integration_name = null;
+              parsed.content_block.is_mcp_app = null;
+            }
             parsed.content_block.integration_icon_url = null;
-            parsed.content_block.icon_name = 'file';
+            parsed.content_block.icon_name = isVisualize ? null : 'file';
             parsed.content_block.context = null;
             parsed.content_block.display_content = null;
-            parsed.content_block.is_mcp_app = null;
           }
         }
         break;
@@ -93,6 +101,12 @@ function generateToolResultSse(toolUseId, toolName, toolInput, blockIndex) {
     const path = toolInput.path || '/mnt/user-data/outputs/file.txt';
     resultContent = [{ type: 'text', text: `File created successfully: ${path}`, uuid: resultUuid }];
     displayContent = { type: 'text', text: `File created successfully: ${path}` };
+  } else if (toolName === 'show_widget') {
+    resultContent = [
+      { type: 'text', text: 'Content rendered and shown to the user. Please do not duplicate the shown content in text because it\'s already visually represented.', uuid: crypto.randomUUID() },
+      { type: 'text', text: '[This tool call rendered an interactive widget in the chat. The user can already see the result — do not repeat it in text or with another visualization tool.]', uuid: crypto.randomUUID() },
+    ];
+    displayContent = null;
   } else if (toolName === 'present_files') {
     const paths = Array.isArray(toolInput.filepaths) ? toolInput.filepaths : [];
     resultContent = paths.map((path) => ({
@@ -112,6 +126,7 @@ function generateToolResultSse(toolUseId, toolName, toolInput, blockIndex) {
     displayContent = { type: 'text', text: 'Tool executed successfully' };
   }
 
+  const isVisualize = toolName === 'show_widget';
   const startEvent = {
     type: 'content_block_start',
     index: blockIndex,
@@ -121,15 +136,15 @@ function generateToolResultSse(toolUseId, toolName, toolInput, blockIndex) {
       flags: null,
       type: 'tool_result',
       tool_use_id: toolUseId,
-      name: toolName,
+      name: isVisualize ? 'visualize:show_widget' : toolName,
       content: [],
       is_error: false,
       structured_content: null,
       meta: null,
       message: toolName === 'present_files' ? 'Presented file' : null,
-      integration_name: null,
+      integration_name: isVisualize ? 'visualize' : null,
       integration_icon_url: null,
-      icon_name: 'file',
+      icon_name: isVisualize ? null : 'file',
       display_content: displayContent,
     },
   };
@@ -185,10 +200,36 @@ function generateCreateFileUpdateSse(blockIndex, toolInput) {
   return formatSseEvent('content_block_delta', JSON.stringify(updateEvent));
 }
 
+function generateWidgetUpdateSse(blockIndex, toolInput) {
+  const widgetCode = toolInput.widget_code || '';
+  if (!widgetCode) return '';
+
+  const title = toolInput.title || 'widget';
+  const updateEvent = {
+    type: 'content_block_delta',
+    index: blockIndex,
+    delta: {
+      type: 'tool_use_block_update_delta',
+      message: toolInput.loading_messages?.[0] || 'Rendering widget',
+      display_content: {
+        type: 'json_block',
+        json_block: JSON.stringify({
+          language: 'html',
+          code: widgetCode,
+          filename: `${title.replace(/[^a-z0-9_-]/gi, '_')}.html`,
+        }),
+      },
+    },
+  };
+
+  return formatSseEvent('content_block_delta', JSON.stringify(updateEvent));
+}
+
 module.exports = {
   augmentClaudeEvent,
   formatSseEvent,
   generateCreateFileUpdateSse,
   generateMessageLimitEvent,
   generateToolResultSse,
+  generateWidgetUpdateSse,
 };

@@ -137,6 +137,13 @@ function createConversationRepository(pool) {
     async getConversation(context, options) {
       return loadConversation(pool, context, options);
     },
+    async deleteConversation(context, options = {}) {
+      const queryable = getQueryable(pool, options);
+      await queryable.query(
+        'DELETE FROM conversations WHERE id = $1 AND user_id = $2 AND org_id = $3',
+        [context.conversationId, context.userId, context.orgId]
+      );
+    },
     async createConversation(context, input, options) {
       return createConversation(pool, context, input, options);
     },

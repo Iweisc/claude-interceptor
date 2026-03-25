@@ -23,3 +23,30 @@ test('health endpoint responds from the modular app bootstrap', async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('rate-limited responses still include claude cors headers', async () => {
+  const app = createApp({
+    config: { corsOrigin: 'https://claude.ai' },
+    repositories: {},
+    services: {},
+  });
+
+  const server = app.listen(0);
+
+  try {
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    let response;
+
+    for (let attempt = 0; attempt <= 120; attempt += 1) {
+      response = await fetch(`${baseUrl}/health`, {
+        headers: { origin: 'https://claude.ai' },
+      });
+    }
+
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://claude.ai');
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

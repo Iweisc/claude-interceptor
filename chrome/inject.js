@@ -1,5 +1,29 @@
 'use strict';
 
+// Override IDB preload cache ASAP
+try {
+  Object.defineProperty(window, '__PRELOADED_IDB_CACHE__', {
+    value: Promise.resolve(undefined),
+    writable: true,
+    configurable: true,
+  });
+  Object.defineProperty(window, '__PRELOADED_IDB_CACHE_RESULT__', {
+    value: undefined,
+    writable: true,
+    configurable: true,
+  });
+} catch (e) { /* ignore */ }
+
+// Clear GrowthBook/Statsig localStorage caches
+try {
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key && /^(growthbook|statsig|gb_|ss_)/.test(key)) {
+      localStorage.removeItem(key);
+    }
+  }
+} catch (e) { /* ignore */ }
+
 const PROXY_ORIGIN = 'https://proxy-ns-0ffzk4u2.usw-1.sealos.app';
 const SETTINGS_KEY = '__CLAUDE_PROXY_SETTINGS__';
 const USER_EMAIL_KEY = '__CLAUDE_PROXY_USER_EMAIL__';
@@ -7,6 +31,14 @@ const COOKIE_HEADER_KEY = '__CLAUDE_PROXY_COOKIE_HEADER__';
 const COMPLETION_RE = /\/api\/organizations\/[^/]+\/chat_conversations\/[^/]+\/(completion|retry_completion)$/;
 const BOOTSTRAP_RE = /^\/api\/bootstrap(?:\/[^/]+\/app_start)?$/;
 const ARTIFACT_TOOLS_RE = /^\/artifacts\/wiggle_artifact\/[^/]+\/tools/;
+const PROXY_OWNED_ORG_ROUTE_RE = /^\/api\/organizations\/[^/]+\/(?:chat_conversations(?:_v\d+)?(?:\/[^/]+(?:\/(?:completion|retry_completion|title|tool_result))?)?|memory|artifacts(?:\/.*)?|conversations\/[^/]+\/wiggle(?:\/.*)?|subscription_details)$/;
+const SIDEBAR_LIST_RE = /^\/api\/organizations\/([^/]+)\/chat_conversations_v\d+/;
+const MAX_RATE_LIMIT_TIER = 'default_claude_max_20x';
+const MAX_BOOTSTRAP_MODELS = Object.freeze([
+  { model: 'claude-sonnet-4-5-20250929', name: 'Sonnet 4.5' },
+  { model: 'claude-opus-4-6', name: 'Opus 4.6' },
+  { model: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5' },
+]);
 const DEFAULT_PROXY_SETTINGS = Object.freeze({
   endpoint: '',
   model: 'claude-sonnet-4-6',
@@ -56,42 +88,42 @@ function shouldBypassProxy(pathname, pagePath) {
   return false;
 }
 
+function shouldProxyRoute(pathname) {
+  if (typeof pathname !== 'string' || !pathname) {
+    return false;
+  }
+
+  return PROXY_OWNED_ORG_ROUTE_RE.test(pathname)
+    || pathname === '/wiggle/download-file'
+    || ARTIFACT_TOOLS_RE.test(pathname);
+}
+
 function rewriteClaudeUrl(inputUrl, options = {}) {
   const url = String(inputUrl || '');
   const pagePath = typeof options.pagePath === 'string'
     ? options.pagePath
     : (typeof window !== 'undefined' && window.location ? window.location.pathname : '');
-  const prefixes = [
-    ['https://claude.ai', 'https://claude.ai'],
-    ['http://claude.ai', 'http://claude.ai'],
-  ];
   const parsed = new URL(url, 'https://claude.ai');
-  if (shouldBypassProxy(parsed.pathname, pagePath)) {
+  if (shouldBypassProxy(parsed.pathname, pagePath) || !shouldProxyRoute(parsed.pathname)) {
     return url;
   }
 
-  if (url.startsWith('/api/') || url.startsWith('/wiggle/download-file') || ARTIFACT_TOOLS_RE.test(url)) {
-    return `${PROXY_ORIGIN}${url}`;
-  }
-
-  for (const [prefix] of prefixes) {
-    if (url.startsWith(`${prefix}/api/`) || url.startsWith(`${prefix}/wiggle/download-file`) || url.startsWith(`${prefix}/artifacts/wiggle_artifact/`)) {
-      return `${PROXY_ORIGIN}${url.slice(prefix.length)}`;
-    }
-  }
-
-  return url;
+  return `${PROXY_ORIGIN}${parsed.pathname}${parsed.search}`;
 }
 
 function mergeCompletionBodyWithSettings(body, settings) {
   const next = body && typeof body === 'object' ? { ...body } : {};
-  const model = typeof settings?.model === 'string' ? settings.model.trim() : '';
   const thinkingBudget = Number.parseInt(settings?.thinkingBudget, 10);
+  const settingsModel = typeof settings?.model === 'string' ? settings.model.trim() : '';
 
-  if (model) next.model = model;
-  next._thinkingEnabled = settings?.enableThinking === true;
-  if (Number.isFinite(thinkingBudget)) {
+  if (settingsModel && !next.model) {
+    next.model = settingsModel;
+  }
+  if (Number.isFinite(thinkingBudget) && thinkingBudget > 0) {
     next._thinkingBudget = Math.min(Math.max(thinkingBudget, 0), 126000);
+  }
+  if (settings?.enableThinking && !next.paprika_mode) {
+    next.paprika_mode = 'extended';
   }
 
   return next;
@@ -182,6 +214,56 @@ function setProxyUserEmailForTests(email) {
   }
 }
 
+function withMaxCapabilities(capabilities) {
+  return Array.from(new Set([...(Array.isArray(capabilities) ? capabilities : []), 'claude_pro', 'claude_max']));
+}
+
+function patchBootstrapModelsConfig(models) {
+  const KNOWN_MODELS = new Set(MAX_BOOTSTRAP_MODELS.map((m) => m.model));
+  const next = [];
+  const seen = new Set();
+
+  if (Array.isArray(models)) {
+    for (const model of models) {
+      if (!model || typeof model !== 'object' || typeof model.model !== 'string') continue;
+      if (!KNOWN_MODELS.has(model.model)) continue;
+      next.push({ ...model, inactive: false });
+      seen.add(model.model);
+    }
+  }
+
+  for (const model of MAX_BOOTSTRAP_MODELS) {
+    if (seen.has(model.model)) continue;
+    next.push({ ...model, inactive: false, overflow: false });
+  }
+
+  return next;
+}
+
+function patchStatsigValues(section) {
+  if (!section || typeof section !== 'object') return;
+  const containers = [section.feature_gates, section.values?.feature_gates];
+  for (const gates of containers) {
+    if (!gates || typeof gates !== 'object') continue;
+    for (const gate of Object.values(gates)) {
+      if (gate && typeof gate === 'object' && 'value' in gate) gate.value = true;
+    }
+  }
+}
+
+function patchOrganization(org) {
+  org.billing_type = 'stripe';
+  org.rate_limit_tier = MAX_RATE_LIMIT_TIER;
+  org.subscription_type = 'claude_max';
+  org.free_credits_status = null;
+  org.api_disabled_reason = null;
+  org.capabilities = withMaxCapabilities(org.capabilities);
+  org.active_flags = withMaxCapabilities(org.active_flags || []);
+  org.claude_ai_bootstrap_models_config = patchBootstrapModelsConfig(
+    org.claude_ai_bootstrap_models_config
+  );
+}
+
 function patchAccountPayloadForBrowser(payload) {
   const next = payload && typeof payload === 'object' ? structuredClone(payload) : {};
   const email = typeof next.email_address === 'string' ? next.email_address : typeof next.email === 'string' ? next.email : '';
@@ -189,9 +271,7 @@ function patchAccountPayloadForBrowser(payload) {
   if (Array.isArray(next.memberships)) {
     for (const membership of next.memberships) {
       if (!membership?.organization) continue;
-      membership.organization.billing_type = 'stripe';
-      membership.organization.rate_limit_tier = 'claude_pro_2025_06';
-      membership.organization.capabilities = Array.from(new Set([...(membership.organization.capabilities || []), 'claude_pro']));
+      patchOrganization(membership.organization);
     }
   }
   return next;
@@ -203,30 +283,88 @@ function patchBootstrapPayloadForBrowser(payload) {
   if (next.account?.memberships) {
     for (const membership of next.account.memberships) {
       if (!membership?.organization?.capabilities?.includes('chat')) continue;
-      membership.organization.billing_type = 'stripe';
-      membership.organization.rate_limit_tier = 'claude_pro_2025_06';
-      membership.organization.free_credits_status = null;
-      membership.organization.api_disabled_reason = null;
-      membership.organization.capabilities = Array.from(new Set([...(membership.organization.capabilities || []), 'claude_pro']));
+      patchOrganization(membership.organization);
     }
   }
 
-  if (next.org_growthbook?.user) {
-    next.org_growthbook.user.orgType = 'claude_pro';
-    next.org_growthbook.user.isPro = true;
-    next.org_growthbook.user.isMax = false;
+  if (next.growthbook?.attributes) {
+    next.growthbook.attributes.isPro = true;
+    next.growthbook.attributes.isMax = true;
   }
 
-  if (next.org_statsig?.user) {
-    next.org_statsig.user.orgType = 'claude_pro';
-    next.org_statsig.user.isPro = true;
+  if (next.org_growthbook?.user) {
+    next.org_growthbook.user.orgType = 'claude_max';
+    next.org_growthbook.user.isPro = true;
+    next.org_growthbook.user.isMax = true;
+  }
+
+  for (const key of ['statsig', 'org_statsig']) {
+    if (next[key]?.user) {
+      next[key].user.orgType = 'claude_max';
+      next[key].user.isPro = true;
+      next[key].user.isMax = true;
+    }
+    patchStatsigValues(next[key]);
   }
 
   if (Array.isArray(next.models)) {
     next.models = next.models.map((model) => ({ ...model, minimum_tier: 'free' }));
   }
 
+  if (next.current_user_access && Array.isArray(next.current_user_access.features)) {
+    const feats = next.current_user_access.features;
+    const required = ['web_search', 'wiggle', 'skills', 'mcp_artifacts', 'inline_visualizations', 'interactive_content', 'saffron', 'geolocation', 'thumbs', 'tool_approval_default_always_allow'];
+    const existing = new Set(feats.map((f) => f.feature));
+    for (const name of required) {
+      const entry = feats.find((f) => f.feature === name);
+      if (entry) { entry.status = 'available'; }
+      else { feats.push({ feature: name, status: 'available' }); }
+    }
+  }
+
   return next;
+}
+
+async function mergeSidebarConversations(fetchFn, thisArg, input, init, orgId) {
+  const proxyListUrl = `${PROXY_ORIGIN}/api/organizations/${orgId}/chat_conversations?limit=50`;
+  const settings = getProxySettings();
+  const proxyHeaders = buildProxyHeaders(new Headers(), settings);
+
+  const [upstreamResult, proxyResult] = await Promise.allSettled([
+    fetchFn.call(thisArg, input, init),
+    fetchFn.call(thisArg, proxyListUrl, { headers: proxyHeaders }),
+  ]);
+
+  const upstream = upstreamResult.status === 'fulfilled' ? upstreamResult.value : null;
+
+  let proxyConversations = [];
+  if (proxyResult.status === 'fulfilled' && proxyResult.value.ok) {
+    try { proxyConversations = await proxyResult.value.json(); } catch (error) { /* ignore */ }
+  }
+  if (!Array.isArray(proxyConversations)) proxyConversations = [];
+
+  try {
+    const upstreamBody = upstream ? await upstream.clone().json() : [];
+
+    if (Array.isArray(upstreamBody)) {
+      return new Response(JSON.stringify(proxyConversations), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (upstreamBody && typeof upstreamBody === 'object') {
+      upstreamBody.conversations = proxyConversations;
+      return new Response(JSON.stringify(upstreamBody), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify(proxyConversations), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify(proxyConversations), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  }
 }
 
 async function patchBrowserResponse(response, patcher) {
@@ -331,7 +469,7 @@ if (typeof module !== 'undefined' && module.exports) {
   window.fetch = async function (input, init) {
     const originalUrl = typeof input === 'string' ? input : input.url;
     const pathname = new URL(originalUrl, 'https://claude.ai').pathname;
-    if (pathname === '/api/account') {
+    if (pathname === '/api/account' || pathname === '/api/account_profile') {
       return patchBrowserResponse(await originalFetch.call(this, input, init), patchAccountPayloadForBrowser);
     }
     if (BOOTSTRAP_RE.test(pathname)) {

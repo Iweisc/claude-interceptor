@@ -12,16 +12,38 @@ const HOP_BY_HOP_HEADERS = new Set([
   'transfer-encoding',
   'upgrade',
 ]);
+const MAX_RATE_LIMIT_TIER = 'default_claude_max_20x';
+const MAX_BOOTSTRAP_MODELS = Object.freeze([
+  { model: 'claude-sonnet-4-5-20250929', name: 'Sonnet 4.5' },
+  { model: 'claude-opus-4-6', name: 'Opus 4.6' },
+  { model: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5' },
+]);
 
 function clonePayload(payload) {
   return payload && typeof payload === 'object' ? structuredClone(payload) : {};
 }
 
-function withClaudeProCapability(capabilities) {
-  const next = Array.isArray(capabilities) ? [...capabilities] : [];
-  if (!next.includes('claude_pro')) {
-    next.push('claude_pro');
+function withMaxCapabilities(capabilities) {
+  return Array.from(new Set([...(Array.isArray(capabilities) ? capabilities : []), 'claude_pro', 'claude_max']));
+}
+
+function patchBootstrapModelsConfig(models) {
+  const next = [];
+  const seen = new Set();
+
+  if (Array.isArray(models)) {
+    for (const model of models) {
+      if (!model || typeof model !== 'object' || typeof model.model !== 'string') continue;
+      next.push({ ...model, inactive: false });
+      seen.add(model.model);
+    }
   }
+
+  for (const model of MAX_BOOTSTRAP_MODELS) {
+    if (seen.has(model.model)) continue;
+    next.push({ ...model, inactive: false, overflow: false });
+  }
+
   return next;
 }
 
@@ -31,10 +53,11 @@ function patchOrganization(organization) {
   return {
     ...organization,
     billing_type: 'stripe',
-    rate_limit_tier: 'claude_pro_2025_06',
+    rate_limit_tier: MAX_RATE_LIMIT_TIER,
     free_credits_status: null,
     api_disabled_reason: null,
-    capabilities: withClaudeProCapability(organization.capabilities),
+    capabilities: withMaxCapabilities(organization.capabilities),
+    claude_ai_bootstrap_models_config: patchBootstrapModelsConfig(organization.claude_ai_bootstrap_models_config),
   };
 }
 
@@ -120,7 +143,7 @@ function patchAccountPayload(payload) {
   }
 
   if ('capabilities' in next || Array.isArray(next.capabilities)) {
-    next.capabilities = withClaudeProCapability(next.capabilities);
+    next.capabilities = withMaxCapabilities(next.capabilities);
   }
 
   if ('billing_type' in next) {
@@ -139,6 +162,7 @@ function patchBootstrapPayload(payload) {
       attributes: {
         ...next.growthbook.attributes,
         isPro: true,
+        isMax: true,
       },
     };
   }
@@ -148,9 +172,9 @@ function patchBootstrapPayload(payload) {
       ...next.org_growthbook,
       user: next.org_growthbook?.user ? {
         ...next.org_growthbook.user,
-        orgType: 'claude_pro',
+        orgType: 'claude_max',
         isPro: true,
-        isMax: false,
+        isMax: true,
       } : next.org_growthbook?.user,
       features: patchFeatureCollection(next.org_growthbook?.features),
     };
@@ -161,8 +185,9 @@ function patchBootstrapPayload(payload) {
       ...next.org_statsig,
       user: {
         ...next.org_statsig.user,
-        orgType: 'claude_pro',
+        orgType: 'claude_max',
         isPro: true,
+        isMax: true,
       },
     };
   }

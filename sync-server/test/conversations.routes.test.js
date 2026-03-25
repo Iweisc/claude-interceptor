@@ -146,6 +146,39 @@ test('put conversation returns updated settings metadata', async () => {
   });
 });
 
+test('title route updates conversation metadata for proxy-owned conversations', async () => {
+  const app = createApp({
+    config: {
+      corsOrigin: 'https://claude.ai',
+      claudeUpstreamBaseUrl: 'https://claude.ai',
+      requestTimeoutMs: 5_000,
+      sessionCacheTtlMs: 60_000,
+    },
+    repositories: buildConversationRepositories(),
+    services: {
+      sessionIdentityCache: buildSessionCache(),
+      fetchImpl: async () => { throw new Error('unexpected upstream fetch'); },
+    },
+  });
+
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/organizations/org-1/chat_conversations/conv-1/title`, {
+      method: 'POST',
+      headers: {
+        origin: 'https://claude.ai',
+        'content-type': 'application/json',
+        'x-forward-cookie': 'sessionKey=abc123',
+      },
+      body: JSON.stringify({ title: 'Meow skill' }),
+    });
+
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.uuid, 'conv-1');
+    assert.equal(body.name, 'Meow skill');
+  });
+});
+
 test('tree=True responses return chat_messages from stored history', async () => {
   const app = createApp({
     config: {

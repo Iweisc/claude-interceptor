@@ -13,6 +13,7 @@ test('account payload is patched and email is preserved', () => {
         organization: {
           capabilities: ['chat'],
           billing_type: 'free',
+          rate_limit_tier: 'default_claude_ai',
         },
       },
     ],
@@ -20,11 +21,12 @@ test('account payload is patched and email is preserved', () => {
 
   assert.equal(payload.email_address, 'user@example.com');
   assert.equal(payload.memberships[0].organization.billing_type, 'stripe');
-  assert.equal(payload.memberships[0].organization.rate_limit_tier, 'claude_pro_2025_06');
+  assert.equal(payload.memberships[0].organization.rate_limit_tier, 'default_claude_max_20x');
   assert.ok(payload.memberships[0].organization.capabilities.includes('claude_pro'));
+  assert.ok(payload.memberships[0].organization.capabilities.includes('claude_max'));
 });
 
-test('bootstrap payload gets pro flags and minimum tiers', () => {
+test('bootstrap payload gets max flags and unlocks max-tier models', () => {
   const payload = patchBootstrapPayload({
     account: {
       memberships: [
@@ -32,34 +34,57 @@ test('bootstrap payload gets pro flags and minimum tiers', () => {
           organization: {
             capabilities: ['chat'],
             billing_type: 'free',
+            rate_limit_tier: 'default_claude_ai',
+            claude_ai_bootstrap_models_config: [
+              { model: 'claude-sonnet-4-5-20250929', name: 'Sonnet 4.5', inactive: false, overflow: false },
+            ],
           },
         },
       ],
     },
-    growthbook: { attributes: { isPro: false } },
+    growthbook: { attributes: { isPro: false, isMax: false } },
     org_growthbook: {
-      user: { isPro: false, orgType: 'free' },
+      user: { isPro: false, isMax: false, orgType: 'free' },
       features: {
         modelAccess: {
           defaultValue: {
-            models: [{ model_id: 'claude-sonnet', minimum_tier: 'pro' }],
+            models: [
+              { model_id: 'claude-sonnet-4-5-20250929', minimum_tier: 'pro' },
+              { model_id: 'claude-opus-4-6', minimum_tier: 'max' },
+            ],
           },
         },
       },
     },
     org_statsig: {
-      user: { isPro: false, orgType: 'free' },
+      user: { isPro: false, isMax: false, orgType: 'free' },
     },
-    models: [{ name: 'claude-sonnet', minimum_tier: 'pro' }],
+    models: [
+      { name: 'claude-sonnet-4-5-20250929', minimum_tier: 'pro' },
+      { name: 'claude-opus-4-6', minimum_tier: 'max' },
+    ],
   });
 
   assert.equal(payload.growthbook.attributes.isPro, true);
+  assert.equal(payload.growthbook.attributes.isMax, true);
   assert.equal(payload.org_growthbook.user.isPro, true);
-  assert.equal(payload.org_growthbook.user.orgType, 'claude_pro');
+  assert.equal(payload.org_growthbook.user.isMax, true);
+  assert.equal(payload.org_growthbook.user.orgType, 'claude_max');
   assert.equal(payload.org_statsig.user.isPro, true);
+  assert.equal(payload.org_statsig.user.isMax, true);
   assert.equal(payload.account.memberships[0].organization.billing_type, 'stripe');
+  assert.equal(payload.account.memberships[0].organization.rate_limit_tier, 'default_claude_max_20x');
+  assert.ok(payload.account.memberships[0].organization.capabilities.includes('claude_max'));
   assert.equal(payload.models[0].minimum_tier, 'free');
   assert.equal(payload.org_growthbook.features.modelAccess.defaultValue.models[0].minimum_tier, 'free');
+  assert.deepEqual(
+    payload.account.memberships[0].organization.claude_ai_bootstrap_models_config.map((model) => model.model),
+    [
+      'claude-sonnet-4-5-20250929',
+      'claude-opus-4-6',
+      'claude-haiku-4-5-20251001',
+    ]
+  );
 });
 
 test('account proxy route patches the upstream response and caches the email', async () => {
@@ -113,7 +138,9 @@ test('account proxy route patches the upstream response and caches the email', a
 
     const body = await response.json();
     assert.equal(body.memberships[0].organization.billing_type, 'stripe');
+    assert.equal(body.memberships[0].organization.rate_limit_tier, 'default_claude_max_20x');
     assert.ok(body.memberships[0].organization.capabilities.includes('claude_pro'));
+    assert.ok(body.memberships[0].organization.capabilities.includes('claude_max'));
     assert.equal(sessionIdentityCache.get('sessionKey=abc123'), 'user@example.com');
     assert.equal(String(requests[0].url), 'https://claude.ai/api/account');
     assert.equal(requests[0].options.headers.cookie, 'sessionKey=abc123');

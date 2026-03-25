@@ -20,7 +20,7 @@ async function withServer(app, callback) {
   }
 }
 
-test('artifact download serves persisted file content and tools route is empty', async () => {
+test('artifact download serves persisted file content, versions resolve, and tools route is empty', async () => {
   const app = createApp({
     config: {
       corsOrigin: 'https://claude.ai',
@@ -38,6 +38,16 @@ test('artifact download serves persisted file content and tools route is empty',
             };
           }
           return null;
+        },
+        async getConversation() {
+          return {
+            artifacts: {
+              '/mnt/user-data/outputs/demo.js': {
+                content: 'console.log("hi");',
+                mimeType: 'application/javascript',
+              },
+            },
+          };
         },
       },
     },
@@ -58,6 +68,29 @@ test('artifact download serves persisted file content and tools route is empty',
     assert.equal(fileResponse.status, 200);
     assert.match(fileResponse.headers.get('content-type'), /application\/javascript/);
     assert.equal(await fileResponse.text(), 'console.log("hi");');
+
+    const versionsResponse = await fetch(`${baseUrl}/api/organizations/org-1/artifacts/demo/versions?source=w`, {
+      headers: {
+        origin: 'https://claude.ai',
+        'x-forward-cookie': 'sessionKey=abc123',
+      },
+    });
+
+    assert.equal(versionsResponse.status, 200);
+    assert.deepEqual(await versionsResponse.json(), {
+      versions: [
+        {
+          version_uuid: 'demo',
+          files: [
+            {
+              file_path: '/mnt/user-data/outputs/demo.js',
+              filename: 'demo.js',
+              mime_type: 'application/javascript',
+            },
+          ],
+        },
+      ],
+    });
 
     const toolsResponse = await fetch(`${baseUrl}/artifacts/wiggle_artifact/demo/tools`, {
       headers: {

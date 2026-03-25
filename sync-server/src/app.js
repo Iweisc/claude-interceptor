@@ -42,12 +42,6 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
   const app = express();
 
   app.use(helmet());
-  app.use(rateLimit({
-    windowMs: 60_000,
-    max: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-  }));
   const captureRawBody = (req, _res, buffer) => {
     if (buffer && buffer.length > 0) {
       req.rawBody = Buffer.from(buffer);
@@ -89,6 +83,12 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
 
     next();
   });
+  app.use(rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }));
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true });
@@ -180,7 +180,11 @@ function createApp({ config, pool, repositories = {}, services = {} }) {
   }
 
   app.use('/api/organizations/:orgId/chat_conversations', attachResolvedUser);
+  app.use('/api/organizations/:orgId/chat_conversations_v2', attachResolvedUser);
+  app.use('/api/organizations/:orgId/chat_conversations_v3', attachResolvedUser);
   app.use('/api/organizations/:orgId/memory', attachResolvedUser);
+  app.use('/api/organizations/:orgId/artifacts', attachResolvedUser);
+  app.use('/api/organizations/:orgId/conversations', attachResolvedUser);
   app.use('/wiggle', attachResolvedUser);
 
   registerConversationRoutes(app, appRepositories);
